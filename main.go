@@ -36,6 +36,7 @@ import (
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/aipaint"          // ai绘图
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/aiwife"           // 随机老婆
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/alipayvoice"      // 支付宝到账语音
+	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/aths"             // 艾涛浩斯
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/autowithdraw"     // 触发者撤回时也自动撤回
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/b14"              // base16384加解密
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/baidu"            // 百度一下

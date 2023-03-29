@@ -1,15 +1,15 @@
 package aths
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/FloatTech/AnimeAPI/nsfw"
 	ctrl "github.com/FloatTech/zbpctrl"
 	"github.com/FloatTech/zbputils/control"
-	"github.com/gabriel-vasile/mimetype"
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	zero "github.com/wdvxdr1123/ZeroBot"
 	"github.com/wdvxdr1123/ZeroBot/message"
+	"image"
 	"io"
 	"net/http"
 	"os"
@@ -29,34 +29,68 @@ func init() {
 		Help:             "- js+[要发送的图片]",
 	})
 	// 保存收到的图文
-	engine.OnPrefixGroup([]string{"js", "记事"}).SetBlock(false).
+	jsPrefixes := []string{"js", "记事"}
+	engine.OnPrefixGroup(jsPrefixes).SetBlock(false).
 		Handle(func(ctx *zero.Ctx) {
-			fmt.Println("ctx.Event.RawMessage=")
 			fmt.Println(ctx.Event.RawMessage)
+			println("ctx.Event.Message.CQCode()=", ctx.Event.Message.CQCode())
 
 			// 将CQ码中的图片URL替换为本地路径
-			if zero.HasPicture(ctx) {
-				var updatedRawMsg string
-				urls := ctx.State["image_url"].([]string)
-				segments := []message.MessageSegment{message.Text("收到图片", ctx.Event.RawMessage)}
-				for _, url := range urls {
-					// 消息中的图片下载下来存储到本地
-					relPath, filename, err := downloadImage(url, ctx.Event.Sender.ID, 3)
-					if err != nil {
-						logrus.Info(fmt.Sprintf("图片%v下载失败", url))
-						ctx.SendChain(message.Text(fmt.Sprintf("图片%v下载失败", url)))
-						return
+			for _, elem := range ctx.Event.Message {
+				if elem.Type == "image" {
+					if url := elem.Data["url"]; url != "" {
+						// 消息中的图片下载下来存储到本地
+						filename, err := downloadImage(url, ctx.Event.Sender.ID, 3)
+						elem.Data["local_name"] = filename
+						if err != nil {
+							logrus.Info(fmt.Sprintf("图片%v下载失败", url))
+							return
+						}
 					}
-					// 用图片本地存储路径替换CQ码中的URL
-					fmt.Printf("relPath=%v, filename=%v, joined=%v\n", relPath, filename, filepath.Join(relPath, filename))
-					updatedRawMsg = strings.Replace(ctx.Event.RawMessage, url, filepath.Join(relPath, filename), 1)
-					segments = append(segments, message.Image(url))
 				}
-				ctx.SendChain(segments...)
-				fmt.Printf("updatedRawMsg更新后=%v", updatedRawMsg)
-				ctx.SendChain(message.Text(updatedRawMsg))
 			}
 
+			// 去除命令前缀
+			finalCQCode := ctx.Event.Message.CQCode()
+			for _, prefix := range jsPrefixes {
+				if strings.HasPrefix(finalCQCode, prefix) {
+					finalCQCode = strings.TrimLeft(finalCQCode[len(prefix):], " ")
+					break
+				}
+			}
+
+			println("最终要入库的CQ码消息=", finalCQCode)
+			ctx.SendChain(message.Text(message.EscapeCQCodeText(finalCQCode)))
+			//ctx.SendChain()
+			//if zero.HasPicture(ctx) {
+			//	var updatedRawMsg string
+			//	urls := ctx.State["image_url"].([]string)
+			//	segments := []message.MessageSegment{message.Text("收到图片", ctx.Event.RawMessage)}
+			//	for _, url := range urls {
+			//		// 消息中的图片下载下来存储到本地
+			//		relPath, filename, err := downloadImage(url, ctx.Event.Sender.ID, 3)
+			//		if err != nil {
+			//			logrus.Info(fmt.Sprintf("图片%v下载失败", url))
+			//			ctx.SendChain(message.Text(fmt.Sprintf("图片%v下载失败", url)))
+			//			return
+			//		}
+			//		// 用图片本地存储路径替换CQ码中的URL
+			//		fmt.Printf("relPath=%v, filename=%v, joined=%v\n", filepath.ToSlash(relPath), filename, filepath.ToSlash(filepath.Join(relPath, filename)))
+			//		updatedRawMsg = strings.Replace(ctx.Event.RawMessage, url, filepath.Join(relPath, filename), 1)
+			//		segments = append(segments, message.Image(url))
+			//	}
+			//	ctx.SendChain(segments...)
+			//	fmt.Printf("updatedRawMsg更新后=%v", updatedRawMsg)
+			//	ctx.SendChain(message.Text(updatedRawMsg))
+			//}
+
+		})
+
+	// 发送图文
+	engine.OnMessage(zero.PrefixRule("ckjs", "查看记事")).SetBlock(false).
+		Handle(func(ctx *zero.Ctx) {
+			s := "导入\n[CQ:image,file=48f1dce3e0a2391d8ef4cfe3e2a3609a.image,url=https://c2cpicdw.qpic.cn/offpic_new/164212720//164212720-976498784-48F1DCE3E0A2391D8EF4CFE3E2A3609A/0?term=255&amp;is_origin=0,local_name=2023T0329T181632.722262.png]\n依赖"
+			ctx.Send(message.ParseMessageFromString(s))
 		})
 }
 
@@ -73,7 +107,7 @@ var headers = map[string]string{
 	"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
 }
 
-func downloadImage(url string, senderId int64, maxRetry int) (string, string, error) {
+func downloadImage(url string, senderId int64, maxRetry int) (string, error) {
 	var err error
 	var resp *http.Response
 	for i := 0; i < maxRetry; i++ {
@@ -90,51 +124,45 @@ func downloadImage(url string, senderId int64, maxRetry int) (string, string, er
 		time.Sleep(2 * time.Second)
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("Failed to download image after %d retries. Error: %v", maxRetry, err)
+		return "", fmt.Errorf("Failed to download image after %d retries. Error: %v", maxRetry, err)
 	}
 
-	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
+	defer resp.Body.Close()
 
 	// 获取文件扩展名
-	ext, err := mimetype.DetectReader(resp.Body)
+	_, imageFormat, err := image.DecodeConfig(bytes.NewBuffer(body))
 	if err != nil {
-		return "", "", fmt.Errorf("Failed to detect image mimetype. Error: %v", err)
+		fmt.Println(err)
+		return "", err
 	}
 
 	// 生成文件名
-	filename := strconv.FormatInt(time.Now().UnixNano(), 10) + "-" + uuid.New().String()[:8] + "." + ext.Extension()
+	filename := time.Now().Format("2006-01-02T150405.000000") + "." + imageFormat
 
-	//// 获取当前工作目录
-	//dir, err := os.Getwd()
-	//if err != nil {
-	//	logrus.Info("Failed to get working directory:", err)
-	//	return
-	//}
-	//logrus.Info("Working directory:", dir)
 	// 获取相对路径
 	relPath := filepath.Join("data", strconv.FormatInt(senderId, 10), "images")
 	absPath, err := filepath.Abs(relPath)
 	if err != nil {
-		return "", "", fmt.Errorf("Failed to get absolute path. Error: %v", err)
+		return "", fmt.Errorf("Failed to get absolute path. Error: %v", err)
 	}
 
 	// 创建目录
 	err = os.MkdirAll(absPath, os.ModePerm)
 	if err != nil {
-		return "", "", fmt.Errorf("Failed to create directory. Error: %v", err)
+		return "", fmt.Errorf("Failed to create directory. Error: %v", err)
 	}
 
 	// 将图片保存到本地
 	filePath := filepath.Join(absPath, filename)
 	err = os.WriteFile(filePath, body, 0666)
 	if err != nil {
-		return "", "", fmt.Errorf("Failed to save image. Error: %v", err)
+		return "", fmt.Errorf("Failed to save image. Error: %v", err)
 	}
 	fmt.Printf("Image saved as %s\n", filename)
 
-	return relPath, filename, nil
+	return filename, nil
 }
