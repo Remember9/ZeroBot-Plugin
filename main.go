@@ -18,17 +18,6 @@ import (
 
 	// ---------以下插件均可通过前面加 // 注释，注释后停用并不加载插件--------- //
 	// ----------------------插件优先级按顺序从高到低---------------------- //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
-	// ----------------------------高优先级区---------------------------- //
-	// vvvvvvvvvvvvvvvvvvvvvvvvvvvv高优先级区vvvvvvvvvvvvvvvvvvvvvvvvvvvv //
-	//               vvvvvvvvvvvvvv高优先级区vvvvvvvvvvvvvv               //
-	//                      vvvvvvv高优先级区vvvvvvv                      //
-	//                          vvvvvvvvvvvvvv                          //
-	//                               vvvv                               //
 
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/antiabuse" // 违禁词
 
@@ -41,24 +30,6 @@ import (
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/manager" // 群管
 
 	_ "github.com/FloatTech/zbputils/job" // 定时指令触发器
-
-	//                               ^^^^                               //
-	//                          ^^^^^^^^^^^^^^                          //
-	//                      ^^^^^^^高优先级区^^^^^^^                      //
-	//               ^^^^^^^^^^^^^^高优先级区^^^^^^^^^^^^^^               //
-	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^高优先级区^^^^^^^^^^^^^^^^^^^^^^^^^^^^ //
-	// ----------------------------高优先级区---------------------------- //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
-	// ----------------------------中优先级区---------------------------- //
-	// vvvvvvvvvvvvvvvvvvvvvvvvvvvv中优先级区vvvvvvvvvvvvvvvvvvvvvvvvvvvv //
-	//               vvvvvvvvvvvvvv中优先级区vvvvvvvvvvvvvv               //
-	//                      vvvvvvv中优先级区vvvvvvv                      //
-	//                          vvvvvvvvvvvvvv                          //
-	//                               vvvv                               //
 
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/ahsai"            // ahsai tts
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/ai_false"         // 服务器监控
@@ -152,24 +123,6 @@ import (
 
 	// _ "github.com/FloatTech/ZeroBot-Plugin/plugin/wtf"           // 鬼东西
 
-	//                               ^^^^                               //
-	//                          ^^^^^^^^^^^^^^                          //
-	//                      ^^^^^^^中优先级区^^^^^^^                      //
-	//               ^^^^^^^^^^^^^^中优先级区^^^^^^^^^^^^^^               //
-	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^中优先级区^^^^^^^^^^^^^^^^^^^^^^^^^^^^ //
-	// ----------------------------中优先级区---------------------------- //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
-	// ----------------------------低优先级区---------------------------- //
-	// vvvvvvvvvvvvvvvvvvvvvvvvvvvv低优先级区vvvvvvvvvvvvvvvvvvvvvvvvvvvv //
-	//               vvvvvvvvvvvvvv低优先级区vvvvvvvvvvvvvv               //
-	//                      vvvvvvv低优先级区vvvvvvv                      //
-	//                          vvvvvvvvvvvvvv                          //
-	//                               vvvv                               //
-
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/curse" // 骂人
 
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/ai_reply" // 人工智能回复
@@ -178,17 +131,6 @@ import (
 
 	_ "github.com/FloatTech/ZeroBot-Plugin/plugin/breakrepeat" // 打断复读
 
-	//                               ^^^^                               //
-	//                          ^^^^^^^^^^^^^^                          //
-	//                      ^^^^^^^低优先级区^^^^^^^                      //
-	//               ^^^^^^^^^^^^^^低优先级区^^^^^^^^^^^^^^               //
-	// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^低优先级区^^^^^^^^^^^^^^^^^^^^^^^^^^^^ //
-	// ----------------------------低优先级区---------------------------- //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
-	//                                                                  //
 	// -----------------------以下为内置依赖，勿动------------------------ //
 	"github.com/FloatTech/floatbox/process"
 	"github.com/sirupsen/logrus"
