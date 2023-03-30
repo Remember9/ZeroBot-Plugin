@@ -87,10 +87,41 @@ func init() {
 		})
 
 	// 发送图文
-	engine.OnMessage(zero.PrefixRule("ckjs", "查看记事")).SetBlock(false).
+	engine.OnPrefixGroup([]string{"ckjs", "查看记事"}).SetBlock(false).
 		Handle(func(ctx *zero.Ctx) {
 			s := "导入\n[CQ:image,file=48f1dce3e0a2391d8ef4cfe3e2a3609a.image,url=https://c2cpicdw.qpic.cn/offpic_new/164212720//164212720-976498784-48F1DCE3E0A2391D8EF4CFE3E2A3609A/0?term=255&amp;is_origin=0,local_name=2023T0329T181632.722262.png]\n依赖"
-			ctx.Send(message.ParseMessageFromString(s))
+			m := message.ParseMessageFromString(s)
+			//println(m)
+			// 将CQ码中的图片URL替换为本地路径
+			for _, elem := range m {
+				if elem.Type == "image" {
+					// 检查CQ码中是否存储了图片的本地文件名
+					if localName, ok := elem.Data["local_name"]; ok {
+						// 获取相对路径
+						relPath := filepath.Join("data", strconv.FormatInt(ctx.Event.Sender.ID, 10), "images", localName)
+						absPath, err := filepath.Abs(relPath)
+						if err != nil {
+							logrus.Info(fmt.Errorf("failed to get absolute path: %v. Error: %v", absPath, err))
+							return
+						}
+
+						// 读取本地二进制图片, 路径分隔符使用Unix格式
+						absPath = filepath.ToSlash(absPath)
+						imageContent, err := os.ReadFile(absPath)
+						if err != nil {
+							logrus.Info(fmt.Errorf("failed to read absolute path: %v. Error: %v", absPath, err))
+							return
+						}
+
+						// 发送时使用本地图片
+						elem = message.ImageBytes(imageContent)
+					}
+				}
+				println(elem.CQCode())
+				ctx.SendChain(elem)
+			}
+
+			//ctx.SendChain(m...)
 		})
 }
 
