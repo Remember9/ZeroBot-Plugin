@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/FloatTech/AnimeAPI/nsfw"
+	"github.com/FloatTech/ZeroBot-Plugin/plugin/aths/model"
 	ctrl "github.com/FloatTech/zbpctrl"
 	"github.com/FloatTech/zbputils/control"
 	"github.com/sirupsen/logrus"
@@ -22,6 +23,17 @@ import (
 const imageRootPath = "/var/bot/"
 const hso = "https://gchat.qpic.cn/gchatpic_new//--4234EDEC5F147A4C319A41149D7E0EA9/0"
 
+const (
+	funcTypeNote = iota + 1
+	funcTypeJishi
+	funcTypeEnglish
+	funcTypeVocabulary
+	funcTypeBook
+	funcTypeTodayLearn
+	funcTypeAutoReview
+	funcTypeAutoRemind
+)
+
 func init() {
 	engine := control.Register("js", &ctrl.Options[*zero.Ctx]{
 		DisableOnDefault: false,
@@ -34,13 +46,13 @@ func init() {
 		Handle(func(ctx *zero.Ctx) {
 			fmt.Println(ctx.Event.RawMessage)
 			println("ctx.Event.Message.CQCode()=", ctx.Event.Message.CQCode())
-
+			qqNumber := ctx.Event.Sender.ID
 			// 将CQ码中的图片URL替换为本地路径
 			for _, elem := range ctx.Event.Message {
 				if elem.Type == "image" {
 					if url := elem.Data["url"]; url != "" {
 						// 消息中的图片下载下来存储到本地
-						filename, err := downloadImage(url, ctx.Event.Sender.ID, 3)
+						filename, err := downloadImage(url, qqNumber, 3)
 						elem.Data["local_name"] = filename
 						if err != nil {
 							logrus.Info(fmt.Sprintf("图片%v下载失败", url))
@@ -58,39 +70,34 @@ func init() {
 					break
 				}
 			}
-
-			println("最终要入库的CQ码消息=", finalCQCode)
+			logrus.Info("最终要入库的CQ码消息=", finalCQCode)
+			note := &model.Note{
+				QQNumber: strconv.FormatInt(qqNumber, 10),
+				Type:     funcTypeJishi,
+				IsReview: 0,
+				Content:  finalCQCode,
+				CDate:    time.Now(),
+			}
+			if err := GetDB().Create(note).Error; err != nil {
+				logrus.Errorf("笔记插入失败, note=%v, err=%s", *note, err.Error())
+				ctx.SendChain(message.Text("笔记插入失败"))
+				return
+			}
 			ctx.SendChain(message.Text(message.EscapeCQCodeText(finalCQCode)))
-			//ctx.SendChain()
-			//if zero.HasPicture(ctx) {
-			//	var updatedRawMsg string
-			//	urls := ctx.State["image_url"].([]string)
-			//	segments := []message.MessageSegment{message.Text("收到图片", ctx.Event.RawMessage)}
-			//	for _, url := range urls {
-			//		// 消息中的图片下载下来存储到本地
-			//		relPath, filename, err := downloadImage(url, ctx.Event.Sender.ID, 3)
-			//		if err != nil {
-			//			logrus.Info(fmt.Sprintf("图片%v下载失败", url))
-			//			ctx.SendChain(message.Text(fmt.Sprintf("图片%v下载失败", url)))
-			//			return
-			//		}
-			//		// 用图片本地存储路径替换CQ码中的URL
-			//		fmt.Printf("relPath=%v, filename=%v, joined=%v\n", filepath.ToSlash(relPath), filename, filepath.ToSlash(filepath.Join(relPath, filename)))
-			//		updatedRawMsg = strings.Replace(ctx.Event.RawMessage, url, filepath.Join(relPath, filename), 1)
-			//		segments = append(segments, message.Image(url))
-			//	}
-			//	ctx.SendChain(segments...)
-			//	fmt.Printf("updatedRawMsg更新后=%v", updatedRawMsg)
-			//	ctx.SendChain(message.Text(updatedRawMsg))
-			//}
-
 		})
 
 	// 发送图文
 	engine.OnPrefixGroup([]string{"ckjs", "查看记事"}).SetBlock(false).
 		Handle(func(ctx *zero.Ctx) {
+			// 提取查看记事的参数
+			qqNumber := ctx.Event.Sender.ID
 			s := "导入\n[CQ:image,file=48f1dce3e0a2391d8ef4cfe3e2a3609a.image,url=https://c2cpicdw.qpic.cn/offpic_new/164212720//164212720-976498784-48F1DCE3E0A2391D8EF4CFE3E2A3609A/0?term=255&amp;is_origin=0,local_name=2023T0329T181632.722262.png]\n依赖"
 			m := message.ParseMessageFromString(s)
+			notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), funcTypeJishi, "", -1)
+			fmt.Println(notes)
+			if err != nil {
+				logrus.Errorf("查询笔记失败：%v", err)
+			}
 			//println(m)
 			// 将CQ码中的图片URL替换为本地路径
 			for _, elem := range m {
@@ -196,4 +203,19 @@ func downloadImage(url string, senderId int64, maxRetry int) (string, error) {
 	fmt.Printf("Image saved as %s\n", filename)
 
 	return filename, nil
+}
+
+func queryNotes(userId string, noteType int8, keyword string, limit int) ([]model.Note, error) {
+	db := GetDB()
+	var notes []model.Note
+	//queryDb := db.Select("id, content, note_url").Where(model.Note{QQNumber: userId, Type: noteType, IsDelete: 0}).Order("cdate desc")
+	queryDb := db.Where(model.Note{QQNumber: userId, Type: noteType, IsDelete: 0}).Order("cdate desc")
+	if keyword != "" {
+		queryDb.Where("content like ?", "%"+keyword+"%")
+	}
+	if limit != -1 {
+		queryDb.Limit(limit)
+	}
+	queryDb.Debug().Find(&notes)
+	return notes, queryDb.Error
 }
