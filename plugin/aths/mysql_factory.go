@@ -15,7 +15,7 @@ func init() {
 	var err error
 	// 初始化配置
 	_config = &Config{}
-	err = _config.InitFromYaml("gorm/config.yaml")
+	err = _config.InitFromYaml("plugin/aths/config.yaml")
 	if err != nil {
 		panic(err.Error())
 	}
