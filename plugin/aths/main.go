@@ -90,28 +90,32 @@ func init() {
 	ckjsPrefix := []string{"ckjs", "查看记事"}
 	engine.OnPrefixGroup(ckjsPrefix).SetBlock(false).
 		Handle(func(ctx *zero.Ctx) {
-			keyword := ""
 			fmt.Println("++++++++++++++++")
 			// 去除命令前缀
-			rawMessage := ctx.Event.RawMessage
-			for _, prefix := range jsPrefixes {
-				if strings.HasPrefix(rawMessage, prefix) {
-					rawMessage = strings.TrimLeft(rawMessage[len(prefix):], " ")
+			keyword := ctx.Event.RawMessage
+			for _, prefix := range ckjsPrefix {
+				if strings.HasPrefix(keyword, prefix) {
+					fmt.Printf("keyword=%v, prefix=%v", keyword, prefix)
+					keyword = strings.TrimLeft(keyword[len(prefix):], " ")
 					break
 				}
-			}
-
-			// 提取查看记事的参数
-			if rawMessage != "" {
-				keyword = rawMessage
 			}
 			qqNumber := ctx.Event.Sender.ID
 			s := "导入\n[CQ:image,file=48f1dce3e0a2391d8ef4cfe3e2a3609a.image,url=https://c2cpicdw.qpic.cn/offpic_new/164212720//164212720-976498784-48F1DCE3E0A2391D8EF4CFE3E2A3609A/0?term=255&amp;is_origin=0,local_name=2023T0329T181632.722262.png]\n依赖"
 			m := message.ParseMessageFromString(s)
-			notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), funcTypeJishi, keyword, -1)
-			fmt.Println(notes)
+			notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), funcTypeJishi, keyword, 10)
+			logrus.Infof("keyword=%v, notes=%v", keyword, notes)
 			if err != nil {
 				logrus.Errorf("查询笔记失败：%v", err)
+			}
+			var mList []message.Message
+			var segList []message.MessageSegment
+			for _, note := range notes {
+				mList = append(mList, message.ParseMessageFromString(note.Content))
+
+				lineBreak := message.Text("\n")
+				segList = append(segList, message.ParseMessageFromString(note.Content)...)
+				segList = append(segList, lineBreak)
 			}
 			//println(m)
 			// 将CQ码中的图片URL替换为本地路径
@@ -140,10 +144,12 @@ func init() {
 					}
 				}
 				println(elem.CQCode())
-				ctx.SendChain(elem)
+				//ctx.SendChain(elem)
 			}
-
-			//ctx.SendChain(m...)
+			for _, msg := range mList {
+				ctx.Send(msg)
+			}
+			//ctx.SendChain(segList...)
 		})
 }
 
