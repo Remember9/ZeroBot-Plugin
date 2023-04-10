@@ -3,7 +3,6 @@ package aths
 import (
 	"bytes"
 	"fmt"
-	"github.com/FloatTech/AnimeAPI/nsfw"
 	"github.com/FloatTech/ZeroBot-Plugin/plugin/aths/model"
 	ctrl "github.com/FloatTech/zbpctrl"
 	"github.com/FloatTech/zbputils/control"
@@ -39,8 +38,12 @@ const (
 	review   = 1
 )
 
+//var folderIdDict = map[int64]string{
+//	164212720: "/131a5840-3c2f-4fe7-88bc-42029bd2d931",
+//}
+
 func init() {
-	// 注册引擎
+	// 注册艾涛浩斯引擎
 	engine := control.Register("js", &ctrl.Options[*zero.Ctx]{
 		DisableOnDefault: false,
 		Brief:            "艾涛浩斯记事本",
@@ -75,30 +78,32 @@ func init() {
 	jsPrefixes := []string{"js", "记事"}
 	engine.OnPrefixGroup(jsPrefixes).SetBlock(false).Handle(func(ctx *zero.Ctx) {
 		qqNumber := ctx.Event.Sender.ID
-		// 将CQ码中的图片URL替换为本地路径
 		for _, elem := range ctx.Event.Message {
-			if elem.Type == "image" {
+			switch elem.Type {
+			case "image":
 				if url := elem.Data["url"]; url != "" {
-					// 消息中的图片下载下来存储到本地
 					filename, err := downloadImage(ctx, url, qqNumber, 3)
-					elem.Data["local_name"] = filename
 					if err != nil {
 						logrus.Info(fmt.Sprintf("图片%v下载失败", url))
 						return
 					}
+					elem.Data["local_name"] = filename
 				}
 			}
 		}
+		// 修改后的消息重新生成CQ码
+		finalCQCode := ctx.Event.Message.CQCode()
 
 		// 去除命令前缀
-		finalCQCode := ctx.Event.Message.CQCode()
 		for _, prefix := range jsPrefixes {
 			if strings.HasPrefix(finalCQCode, prefix) {
-				finalCQCode = strings.TrimLeft(finalCQCode[len(prefix):], " ")
+				finalCQCode = strings.TrimPrefix(finalCQCode, prefix)
+				finalCQCode = strings.TrimLeft(finalCQCode, " ")
 				break
 			}
 		}
 		logrus.Info("最终要入库的CQ码消息=", finalCQCode)
+
 		note := &model.Note{
 			QQNumber: strconv.FormatInt(qqNumber, 10),
 			Type:     funcTypeJishi,
@@ -106,21 +111,21 @@ func init() {
 			Content:  finalCQCode,
 			CDate:    time.Now(),
 		}
-		if err := GetDB().Create(note).Error; err != nil {
+		err := GetDB().Create(note).Error
+		if err != nil {
 			logrus.Errorf("笔记插入失败, note=%v, err=%s", *note, err.Error())
 			ctx.SendChain(message.Text("笔记插入失败"))
 			return
 		}
+
 		ctx.SendChain(message.Text(finalCQCode))
 	})
 
-	// 发送图文
+	// 查看记事
 	ckjsPrefix := []string{"ckjs", "查看记事"}
 	engine.OnPrefixGroup(ckjsPrefix).SetBlock(false).Handle(func(ctx *zero.Ctx) {
 		params := removePrefix(ctx.Event.RawMessage, ckjsPrefix)
 		qqNumber := ctx.Event.Sender.ID
-		s := "导入\n[CQ:image,file=48f1dce3e0a2391d8ef4cfe3e2a3609a.image,url=https://c2cpicdw.qpic.cn/offpic_new/164212720//164212720-976498784-48F1DCE3E0A2391D8EF4CFE3E2A3609A/0?term=255&amp;is_origin=0,local_name=2023T0329T181632.722262.png]\n依赖"
-		m := message.ParseMessageFromString(s)
 		notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), funcTypeJishi, params, 10)
 		logrus.Infof("params=%v, notes=%v", params, notes)
 		if err != nil {
@@ -133,37 +138,12 @@ func init() {
 			mList = append(mList, m)
 			segList = append(segList, m...)
 		}
-		// 将CQ码中的图片URL替换为本地路径
-		for _, elem := range m {
-			if elem.Type == "image" {
-				// 检查CQ码中是否存储了图片的本地文件名
-				if localName, ok := elem.Data["local_name"]; ok {
-					// 获取相对路径
-					relPath := filepath.Join("data", strconv.FormatInt(ctx.Event.Sender.ID, 10), "images", localName)
-					absPath, err := filepath.Abs(relPath)
-					if err != nil {
-						logrus.Info(fmt.Errorf("failed to get absolute path: %v. Error: %v", absPath, err))
-						return
-					}
 
-					// 读取本地二进制图片, 路径分隔符使用Unix格式
-					absPath = filepath.ToSlash(absPath)
-					imageContent, err := os.ReadFile(absPath)
-					if err != nil {
-						logrus.Info(fmt.Errorf("failed to read absolute path: %v. Error: %v", absPath, err))
-						return
-					}
-
-					// 发送时使用本地图片
-					elem = message.ImageBytes(imageContent)
-				}
-			}
-			//println(elem.CQCode())
-			//ctx.SendChain(elem)
-		}
 		// 把多个单独消息拼接成一条长消息
 		var endMsg []message.MessageSegment
 		for i, msg := range mList {
+			// 将CQ码中的图片URL替换为本地路径
+			msg := replaceImageUrlWithLocalPath(msg, qqNumber)
 			if i != 0 { // 两条消息之间添加换行
 				endMsg = append(endMsg, message.Text("\n"))
 			}
@@ -174,28 +154,50 @@ func init() {
 	})
 }
 
-func autojudge(ctx *zero.Ctx, p *nsfw.Picture) {
-	if p.Neutral > 0.3 {
-		return
+func replaceImageUrlWithLocalPath(msg message.Message, qqNumber int64) message.Message {
+	updatedMsg := make(message.Message, len(msg))
+	for i, elem := range msg {
+		if elem.Type == "image" {
+			localName, ok := elem.Data["local_name"]
+			if ok {
+				relPath := filepath.Join("data", strconv.FormatInt(qqNumber, 10), "images", localName)
+				absPath, err := filepath.Abs(relPath)
+				if err != nil {
+					logrus.Info(fmt.Errorf("failed to get absolute path: %v. Error: %v", absPath, err))
+				} else {
+					absPath = filepath.ToSlash(absPath)
+					imageContent, err := os.ReadFile(absPath)
+					if err != nil {
+						logrus.Info(fmt.Errorf("failed to read absolute path: %v. Error: %v", absPath, err))
+					} else {
+						updatedMsg[i] = message.ImageBytes(imageContent)
+						continue
+					}
+				}
+			}
+		}
+		updatedMsg[i] = elem
 	}
-	c := ""
-	ctx.Send(message.ReplyWithMessage(ctx.Event.MessageID, message.Text(c, "\n"), message.Image(hso)))
-}
-
-// 设置伪装浏览器header
-var headers = map[string]string{
-	"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
+	return updatedMsg
 }
 
 func downloadImage(ctx *zero.Ctx, url string, senderId int64, maxRetry int) (string, error) {
-	var err error
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create http request: %v", err)
+	}
+
+	// 设置伪装浏览器header
+	var headers = map[string]string{
+		"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
 	var resp *http.Response
 	for i := 0; i < maxRetry; i++ {
-		client := &http.Client{}
-		req, _ := http.NewRequest("GET", url, nil)
-		for key, value := range headers {
-			req.Header.Set(key, value)
-		}
 		resp, err = client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			break
@@ -204,20 +206,19 @@ func downloadImage(ctx *zero.Ctx, url string, senderId int64, maxRetry int) (str
 		time.Sleep(2 * time.Second)
 	}
 	if err != nil {
-		return "", fmt.Errorf("Failed to download image after %d retries. Error: %v", maxRetry, err)
+		return "", fmt.Errorf("failed to download image after %d retries: %v", maxRetry, err)
 	}
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to read response body: %v", err)
 	}
-	defer resp.Body.Close()
 
 	// 获取文件扩展名
 	_, imageFormat, err := image.DecodeConfig(bytes.NewBuffer(body))
 	if err != nil {
-		fmt.Println(err)
-		return "", err
+		return "", fmt.Errorf("failed to decode image: %v", err)
 	}
 
 	// 生成文件名
@@ -227,29 +228,30 @@ func downloadImage(ctx *zero.Ctx, url string, senderId int64, maxRetry int) (str
 	relPath := filepath.Join("data", strconv.FormatInt(senderId, 10), "images")
 	absPath, err := filepath.Abs(relPath)
 	if err != nil {
-		return "", fmt.Errorf("Failed to get absolute path. Error: %v", err)
+		return "", fmt.Errorf("failed to get absolute path: %v", err)
 	}
 
 	// 创建目录
 	err = os.MkdirAll(absPath, os.ModePerm)
 	if err != nil {
-		return "", fmt.Errorf("Failed to create directory. Error: %v", err)
+		return "", fmt.Errorf("failed to create directory: %v", err)
 	}
 
 	// 将图片保存到本地
 	filePath := filepath.Join(absPath, filename)
 	err = os.WriteFile(filePath, body, 0666)
 	if err != nil {
-		return "", fmt.Errorf("Failed to save image. Error: %v", err)
+		return "", fmt.Errorf("failed to save image: %v", err)
 	}
+
 	fmt.Printf("Image saved as %s\n", filename)
 
 	// 上传到群文件
 	//ctx.UploadGroupFile(718853660, filePath, filename, "")
-	files := ctx.GetThisGroupRootFiles(0)
-	fmt.Printf("files=%v", files)
-	upResp := ctx.UploadThisGroupFile(filePath, filename, "/131a5840-3c2f-4fe7-88bc-42029bd2d931")
-	fmt.Printf("上传群文件结果：%v", upResp)
+	//files := ctx.GetThisGroupRootFiles(0)
+	//fmt.Printf("files=%v", files)
+	//upResp := ctx.UploadThisGroupFile(filePath, filename, "/131a5840-3c2f-4fe7-88bc-42029bd2d931")
+	//fmt.Printf("上传群文件结果：%v", upResp)
 
 	return filename, nil
 }
