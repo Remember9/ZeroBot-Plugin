@@ -66,6 +66,55 @@ func init() {
 		ctx.SendChain(message.Text(files))
 	})
 
+	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		if !strings.Contains(ctx.Event.RawMessage, "提醒") {
+			return
+		}
+
+		nextRemind, err := remindResolve(ctx.Event.RawMessage)
+		if err != nil {
+			return
+		}
+
+		if nextRemind.Time.Before(time.Now().Add(time.Minute)) {
+			logrus.Info("解析失败：计划提醒时间必须在一分钟之后")
+			ctx.SendChain(message.Text("计划提醒时间必须在一分钟之后"))
+			return
+		}
+		qqNumber := strconv.FormatInt(ctx.Event.Sender.ID, 10)
+		groupNumber := strconv.FormatInt(ctx.Event.GroupID, 10)
+
+		data := map[string]interface{}{
+			"next_remind_time": nextRemind.Time.Format("2006-01-02 15:04:05"),
+			"content":          nextRemind.Content,
+			"qq_number":        qqNumber,
+			"group_number":     groupNumber,
+			"status":           TaskStatusOn,
+			"type":             TaskTypeTodo,
+			"cdate":            time.Now().Format("2006-01-02 15:04:05"),
+			"remind_rule":      nextRemind.RemindRule,
+			"is_repeat":        map[bool]int{false: 0, true: 1}[nextRemind.IsRepeat],
+		}
+
+		logrus.Infof("本次定时提醒要入库数据%v", data)
+
+		dao := GetDB()
+
+		if err := dao.Debug().Model(&model.Remind{}).Create(data).Error; err == nil {
+			logrus.Infof("新建定时提醒成功:%s", ctx.Event.RawMessage)
+			name := "你"
+			fmt.Printf("nextRemind.RemindQQ=%v, qqNumber=%v\n", nextRemind.RemindQQ, qqNumber)
+			if nextRemind.RemindQQ != "" {
+				name = "这个傻逼"
+			}
+			ctx.SendChain(message.Text(fmt.Sprintf("好的，%s我会提醒%s%s", data["remind_rule"], name, data["content"])))
+		} else {
+			logrus.Errorf("新建定时提醒失败:%v", err)
+			ctx.SendChain(message.Text("新建定时提醒失败"))
+		}
+
+	})
+
 	// 查群文件
 	engine.OnPrefixGroup([]string{"wjurl"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
 		nameList := []string{"地质.jpg", "公式.jpg", "dizhi.jpg"}

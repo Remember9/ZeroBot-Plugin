@@ -2,6 +2,7 @@ package aths
 
 import (
 	"fmt"
+	"github.com/FloatTech/ZeroBot-Plugin/plugin/aths/model"
 	"github.com/sirupsen/logrus"
 	zero "github.com/wdvxdr1123/ZeroBot"
 	"github.com/wdvxdr1123/ZeroBot/message"
@@ -67,11 +68,18 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 	logStr := "[" + time.Unix(stime, 0).Format("2006-01-02 15:04:05") + "]"
 
 	remindDB := GetDB()
+	if remindDB == nil {
+		// Handle the error
+		panic("Failed to connect to the database")
+	}
 	var reminds []map[string]interface{}
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
-	remindDB.Select("id, next_remind_time, content, last_remind_time, remind_rule, qq_number, group_number, is_repeat").
+	if err := remindDB.Debug().Model(&model.Remind{}).Select("id, next_remind_time, content, last_remind_time, remind_rule, qq_number, group_number, is_repeat").
 		Where("type = ? AND status = ? AND next_remind_time <= ?", TaskTypeTodo, TaskStatusOn, nowStr).
-		Find(&reminds)
+		Find(&reminds).Error; err != nil {
+		logrus.Errorf("[CheckReminderEvents] Failed to get reminder events: %v", err)
+		return
+	}
 	update := make([]map[string]interface{}, 0)
 	for _, row := range reminds {
 		sendContent := ""
