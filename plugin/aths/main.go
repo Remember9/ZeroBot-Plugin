@@ -43,6 +43,13 @@ const (
 //}
 
 func init() {
+	ticker := time.NewTicker(5 * time.Second)
+	go func() {
+		var ctx = &zero.Ctx{}
+		for range ticker.C {
+			CheckReminderEvents(ctx)
+		}
+	}()
 	// 注册艾涛浩斯引擎
 	engine := control.Register("js", &ctrl.Options[*zero.Ctx]{
 		DisableOnDefault: false,
