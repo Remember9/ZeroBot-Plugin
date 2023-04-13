@@ -6,7 +6,6 @@ import (
 	"github.com/sirupsen/logrus"
 	zero "github.com/wdvxdr1123/ZeroBot"
 	"github.com/wdvxdr1123/ZeroBot/message"
-	"gorm.io/gorm/clause"
 	"regexp"
 	"strconv"
 	"strings"
@@ -80,6 +79,7 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 		logrus.Errorf("[CheckReminderEvents] Failed to get reminder events: %v", err)
 		return
 	}
+	fmt.Printf("@@@@@@@@@@@@@@@@@@@@@reminds=%v\n", reminds)
 	update := make([]map[string]interface{}, 0)
 	for _, row := range reminds {
 		sendContent := ""
@@ -88,56 +88,69 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 		} else {
 			sendContent = "到点了，到点了！(" + row["remind_rule"].(string) + ")"
 		}
-		qqNumher, _ := strconv.Atoi((row["qq_number"].(string)))
+		qqNumber, _ := strconv.Atoi((row["qq_number"].(string)))
 		groupNumber, _ := strconv.Atoi((row["group_number"].(string)))
+		if qqNumber != 164212720 {
+			continue
+		}
 		// 私发提醒
-		ctx.SendPrivateMessage(int64(qqNumher), message.Text(sendContent))
+		println("@@@@@@@@@@@@@@@@@@@@@   groupNumber", groupNumber)
+		println("@@@@@@@@@@@@@@@@@@@@@   qqNumber", qqNumber)
+		ctx.SendPrivateMessage(int64(qqNumber), message.Text(sendContent))
 		// 如果是在群里建立的定时提醒，还会在群里at并提醒
-		if row["group_number"] != nil && row["group_number"].(string) != "" {
-			msg := message.Message{message.At(int64(qqNumher)), message.Text(sendContent)}
+		if row["group_number"] != nil && row["group_number"].(string) != "0" {
+			msg := message.Message{message.At(int64(qqNumber)), message.Text(sendContent)}
 			ctx.SendGroupMessage(int64(groupNumber), msg)
 		}
 		status := TaskStatusOff
-		if row["is_repeat"].(int) == 1 {
+		if row["is_repeat"].(int8) == 1 {
 			status = TaskStatusOn
 		}
+		fmt.Printf("@@@@@@@@@@@@@@@@@@@@@row=%v", row)
 		updateItem := map[string]interface{}{
-			"id":               row["id"].(int),
+			"id":               row["id"].(uint),
 			"last_remind_time": time.Now().Format("2006-01-02 15:04:05"),
 			"status":           status,
-			"next_remind_time": row["next_remind_time"].(string),
+			"next_remind_time": row["next_remind_time"],
 		}
-		if row["is_repeat"].(int) == 1 {
+		if row["is_repeat"].(int8) == 1 {
 			nextRemind, err := remindResolve(row["remind_rule"].(string))
 			if err != nil {
 				errMsg := fmt.Sprintf("提醒规则: %s, 错误信息%s", row["remind_rule"].(string), err.Error())
-				logrus.Errorf(errMsg)
 				ctx.SendChain(message.Text(errMsg))
+				logrus.WithFields(logrus.Fields{"提醒规则": row["remind_rule"].(string), "错误信息": errMsg}).Error("更新下次提醒时间失败")
 				return
 			}
 			updateItem["next_remind_time"] = nextRemind.Time
-			logrus.WithFields(logrus.Fields{"提醒规则": row["remind_rule"].(string), "错误信息": err.Error()}).Error("更新下次提醒时间失败")
 		}
+
+		// 成功发送提醒后，更新提醒任务
+		result := remindDB.Debug().Model(&model.Remind{}).Where("id", updateItem["id"]).Updates(&updateItem)
+		if result.Error != nil {
+			logrus.Errorf("更新提醒任务失败, error=%v", result.Error.Error())
+		} else {
+			logrus.WithFields(logrus.Fields{"影响行数": int(result.RowsAffected), "更新结果": result}).Info("更新提醒任务成功")
+		}
+
 		update = append(update, updateItem)
 	}
 
 	// 获取待办的全部id
-	ids := make([]int, len(update))
+	ids := make([]uint, len(update))
 	for i, m := range update {
-		if id, ok := m["id"].(int); ok {
+		fmt.Printf("获取待办的全部id m=%v", m)
+		if id, ok := m["id"].(uint); ok {
 			ids[i] = id
 		}
 	}
 	logStr += fmt.Sprintf("待办个数: %s, ids=%v", strconv.Itoa(len(update)), ids)
 	// 根据remind_rule更新next_remind_time
+	logrus.Infof("@@@@@@@@@@@@@@@@@@@@@update=%v", update)
+	logrus.Infof("@@@@@@@@@@@@@@@@@@@@@len update=%v", len(update))
 	if len(update) > 0 {
-		result := remindDB.Clauses(clause.OnConflict{DoUpdates: clause.AssignmentColumns([]string{"last_remind_time", "status", "next_remind_time"})}).
-			Create(&update)
-		if result.Error != nil {
-			logrus.WithFields(logrus.Fields{"影响行数": 0, "error": result.Error.Error()}).Error("更新提醒任务失败")
-		} else {
-			logrus.WithFields(logrus.Fields{"影响行数": int(result.RowsAffected), "更新结果": update}).Info("更新提醒任务成功")
-		}
+		//result := remindDB.Clauses(clause.OnConflict{DoUpdates: clause.AssignmentColumns([]string{"last_remind_time", "status", "next_remind_time"})}).
+		//	Create(&update)
+
 	}
 
 	etime := time.Now().Unix()
@@ -160,14 +173,20 @@ func remindResolve(remindMsg string) (RemindData, error) {
 
 	// 解析待办命令
 	todoRule, todoThing := "", ""
-	if strings.Contains(remindMsg, "提醒他") || strings.Contains(remindMsg, "提醒她") || strings.Contains(remindMsg, "提醒它") || strings.Contains(remindMsg, "提醒ta") {
-		todoRuleAndThing := strings.SplitN(remindMsg, "提醒他", 2)
-		todoRule = strings.Trim(todoRuleAndThing[0], " ")
-		todoThing = strings.Trim(todoRuleAndThing[1], " ")
+	if remindQq != "" {
+		fmt.Printf("regexp.MustCompile(`(叫|提醒(他|她|它|ta)?)`).Split(remindMsg, 2)=%v\n", regexp.MustCompile(`(叫|提醒)我`).Split(remindMsg, 2))
+		parts := regexp.MustCompile(`(叫|提醒(他|她|它|ta)?)`).Split(remindMsg, 2)
+		todoRule = parts[0]
+		if len(parts) > 1 {
+			todoThing = parts[1]
+		}
 	} else {
-		todoRuleAndThing := strings.SplitN(remindMsg, "提醒我", 2)
-		todoRule = strings.Trim(todoRuleAndThing[0], " ")
-		todoThing = strings.Trim(todoRuleAndThing[1], " ")
+		fmt.Printf("regexp.MustComle(`(叫|提醒)我`)pi.Split(remindMsg, 2)=%v\n", regexp.MustCompile(`(叫|提醒)我`).Split(remindMsg, 2))
+		parts := regexp.MustCompile(`(叫|提醒)我`).Split(remindMsg, 2)
+		todoRule = parts[0]
+		if len(parts) > 1 {
+			todoThing = parts[1]
+		}
 	}
 
 	for regxType, rule := range remindRules {

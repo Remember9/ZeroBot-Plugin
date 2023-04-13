@@ -43,19 +43,29 @@ const (
 //}
 
 func init() {
-	ticker := time.NewTicker(5 * time.Second)
-	go func() {
-		var ctx = &zero.Ctx{}
-		for range ticker.C {
-			CheckReminderEvents(ctx)
-		}
-	}()
 	// 注册艾涛浩斯引擎
 	engine := control.Register("js", &ctrl.Options[*zero.Ctx]{
 		DisableOnDefault: false,
 		Brief:            "艾涛浩斯记事本",
 		Help:             "- js+[要发送的图片]",
 	})
+
+	// 开启一个定时器，定时查询表中是否有到时间的提醒
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		time.Sleep(5 * time.Second)
+		var ctx *zero.Ctx
+		// 获取一个在线能用的bot
+		zero.RangeBot(func(id int64, c *zero.Ctx) bool {
+			ctx = c
+			return false
+		})
+		// 查询待提醒事件
+		for range ticker.C {
+			CheckReminderEvents(ctx)
+		}
+	}()
+
 	// 群文件
 	engine.OnPrefixGroup([]string{"wjlb", "文件列表"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
 		println("文件列表")
@@ -67,6 +77,11 @@ func init() {
 	})
 
 	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		zero.RangeBot(func(id int64, c *zero.Ctx) bool {
+			println("%%%%%%%%%  id=", id)
+			c.SendPrivateMessage(164212720, message.Text("我是我的"))
+			return true
+		})
 		if !strings.Contains(ctx.Event.RawMessage, "提醒") {
 			return
 		}
@@ -128,6 +143,10 @@ func init() {
 		println(getFileURLbyFileName(ctx, "地质.jpg"))
 		println(getFileURLbyFileName(ctx, "公式.jpg"))
 		println(getFileURLbyFileName(ctx, "dizhi.jpg"))
+	})
+
+	// 删除记事
+	engine.OnPrefixGroup([]string{"del"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
 	})
 
 	// 保存收到的图文
