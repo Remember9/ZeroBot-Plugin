@@ -14,9 +14,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const imageRootPath = "/var/bot/"
@@ -38,11 +40,24 @@ const (
 	review   = 1
 )
 
+const (
+	NoDeleted = 0
+	Deleted   = 1
+)
+
 //var folderIdDict = map[int64]string{
 //	164212720: "/131a5840-3c2f-4fe7-88bc-42029bd2d931",
 //}
 
+type userInfo struct {
+	cmdType int
+	idMap   map[int]uint
+}
+
+var userInfos map[int64]userInfo
+
 func init() {
+	userInfos = make(map[int64]userInfo)
 	// 注册艾涛浩斯引擎
 	engine := control.Register("js", &ctrl.Options[*zero.Ctx]{
 		DisableOnDefault: false,
@@ -76,12 +91,8 @@ func init() {
 		ctx.SendChain(message.Text(files))
 	})
 
+	// 添加新的定时提醒
 	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
-		zero.RangeBot(func(id int64, c *zero.Ctx) bool {
-			println("%%%%%%%%%  id=", id)
-			c.SendPrivateMessage(164212720, message.Text("我是我的"))
-			return true
-		})
 		if !strings.Contains(ctx.Event.RawMessage, "提醒") {
 			return
 		}
@@ -147,6 +158,45 @@ func init() {
 
 	// 删除记事
 	engine.OnPrefixGroup([]string{"del"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		ids := ctx.State["args"].(string)
+		fmt.Printf("要删除的id=%v\n", ids)
+		db := GetDB()
+		userInfo, ok := userInfos[ctx.Event.Sender.ID]
+		if !ok {
+			ctx.SendChain(message.Text("请先查询出你要删除的内容"))
+			return
+		}
+
+		switch userInfo.cmdType {
+		case funcTypeJishi:
+			var notes []model.Note
+			if err := db.Where("id in ?", ids).Find(&notes).Error; err != nil {
+				errMsg := fmt.Sprintf("查询待删除内容失败：%v", err.Error())
+				logrus.Errorf(errMsg)
+				ctx.SendChain(message.Text(errMsg))
+				return
+			}
+			if err := db.Debug().Model(&model.Note{}).Where("id in ?", ids).Updates(map[string]interface{}{"is_delete": Deleted}).Error; err != nil {
+				errMsg := fmt.Sprintf("删除失败：%v", err.Error())
+				logrus.Errorf(errMsg)
+				ctx.SendChain(message.Text(errMsg))
+				return
+			}
+		case funcTypeAutoRemind:
+			var tasks []model.Remind
+			if err := db.Where("id in ?", ids).Find(&tasks).Error; err != nil {
+				errMsg := fmt.Sprintf("查询待删除内容失败：%v", err.Error())
+				logrus.Errorf(errMsg)
+				ctx.SendChain(message.Text(errMsg))
+				return
+			}
+			if err := db.Debug().Model(&model.Remind{}).Where("id in ?", ids).Updates(map[string]interface{}{"status": TaskStatusOff}).Error; err != nil {
+				errMsg := fmt.Sprintf("删除失败：%v", err.Error())
+				logrus.Errorf(errMsg)
+				ctx.SendChain(message.Text(errMsg))
+				return
+			}
+		}
 	})
 
 	// 保存收到的图文
@@ -208,11 +258,53 @@ func init() {
 		}
 		var mList []message.Message
 		var segList []message.MessageSegment
-		for _, note := range notes {
+		idMap := map[int]uint{}
+		for i, note := range notes {
 			m := message.ParseMessageFromString(note.Content + "\n")
 			mList = append(mList, m)
 			segList = append(segList, m...)
+			idMap[i+1] = note.ID // 记事列表id映射关系
 		}
+		// 保存该用户记事列表id映射关系
+		userInfos[qqNumber] = userInfo{cmdType: funcTypeJishi, idMap: idMap}
+
+		// 把多个单独消息拼接成一条长消息
+		var endMsg []message.MessageSegment
+		for i, msg := range mList {
+			// 将CQ码中的图片URL替换为本地路径
+			msg := replaceImageUrlWithLocalPath(msg, qqNumber)
+			if i != 0 { // 两条消息之间添加换行
+				endMsg = append(endMsg, message.Text("\n"))
+			}
+			endMsg = append(endMsg, message.Text(i+1, ". ")) // 给每条笔记添加序号
+			endMsg = append(endMsg, msg...)
+		}
+		ctx.SendChain(endMsg...)
+	})
+
+	// 查看定时任务
+	cronPrefix := []string{"tx", "查看提醒"}
+	engine.OnPrefixGroup(cronPrefix).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		params := removePrefix(ctx.Event.RawMessage, cronPrefix)
+		qqNumber := ctx.Event.Sender.ID
+		var cronTasks []model.Remind
+		db := GetDB()
+		if err := db.Debug().Where("qq_number =? and status=?", qqNumber, TaskStatusOn).Find(&cronTasks).Error; err != nil {
+			logrus.Errorf("查询笔记失败：%v", err.Error)
+			return
+		}
+		logrus.Infof("params=%v, cronTasks=%v", params, cronTasks)
+		var mList []message.Message
+		var segList []message.MessageSegment
+		idMap := map[int]uint{}
+		for i, task := range cronTasks {
+			m := message.ParseMessageFromString(task.Content + "\n下次提醒：" + task.NextRemindTime.Format("2006-01-02 15:04:05") + "\n")
+			mList = append(mList, m)
+			segList = append(segList, m...)
+			idMap[i+1] = task.ID // 记事列表id映射关系
+		}
+		// 保存该用户记事列表id映射关系
+		userInfos[qqNumber] = userInfo{cmdType: funcTypeJishi, idMap: idMap}
 
 		// 把多个单独消息拼接成一条长消息
 		var endMsg []message.MessageSegment
@@ -443,4 +535,27 @@ func getFileURLbyfolderID(ctx *zero.Ctx, fileName, folderid string) (fileSearchN
 		}
 	}
 	return
+}
+
+// 提取参数里的ID
+func extractIds(str string) []int {
+	var ids []int
+	str = strings.TrimFunc(str, func(r rune) bool {
+		return !unicode.IsDigit(r)
+	})
+	nums := regexp.MustCompile("[ ,]+").Split(str, -1) // 使用正则表达式来支持逗号和空格分隔符
+	for _, num := range nums {
+		if strings.Contains(num, "-") { // 处理范围
+			rangeNums := strings.Split(num, "-")
+			start, _ := strconv.Atoi(rangeNums[0])
+			end, _ := strconv.Atoi(rangeNums[1])
+			for i := start; i <= end; i++ {
+				ids = append(ids, i)
+			}
+		} else if num != "" { // 处理单个ID
+			id, _ := strconv.Atoi(num)
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
