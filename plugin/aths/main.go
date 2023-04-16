@@ -7,6 +7,7 @@ import (
 	ctrl "github.com/FloatTech/zbpctrl"
 	"github.com/FloatTech/zbputils/control"
 	"github.com/sirupsen/logrus"
+	"github.com/syyongx/php2go"
 	zero "github.com/wdvxdr1123/ZeroBot"
 	"github.com/wdvxdr1123/ZeroBot/message"
 	"image"
@@ -81,16 +82,6 @@ func init() {
 		}
 	}()
 
-	// 群文件
-	engine.OnPrefixGroup([]string{"wjlb", "文件列表"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
-		println("文件列表")
-		getFileURLbyFileName(ctx, "")
-		fileList := getGroupFileList(ctx)
-		files := strings.Join(fileList, "\n")
-		println(files)
-		ctx.SendChain(message.Text(files))
-	})
-
 	// 添加新的定时提醒
 	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
 		if !strings.Contains(ctx.Event.RawMessage, "提醒") {
@@ -139,64 +130,6 @@ func init() {
 			ctx.SendChain(message.Text("新建定时提醒失败"))
 		}
 
-	})
-
-	// 查群文件
-	engine.OnPrefixGroup([]string{"wjurl"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
-		nameList := []string{"地质.jpg", "公式.jpg", "dizhi.jpg"}
-		for _, name := range nameList {
-			_, url := getFileURLbyFileName(ctx, name)
-			ctx.SendChain(message.Text(name))
-			ctx.SendChain(message.Image(url))
-			ctx.SendChain(message.Image("https://gchat.qpic.cn/gchatpic_new/1506445901/718853660-2934326276-56A46A5603EDC69EE50A4358D4C14691/0?term=255&amp;is_origin=0"))
-		}
-
-		println(getFileURLbyFileName(ctx, "地质.jpg"))
-		println(getFileURLbyFileName(ctx, "公式.jpg"))
-		println(getFileURLbyFileName(ctx, "dizhi.jpg"))
-	})
-
-	// 删除记事
-	engine.OnPrefixGroup([]string{"del"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
-		ids := ctx.State["args"].(string)
-		fmt.Printf("要删除的id=%v\n", ids)
-		db := GetDB()
-		userInfo, ok := userInfos[ctx.Event.Sender.ID]
-		if !ok {
-			ctx.SendChain(message.Text("请先查询出你要删除的内容"))
-			return
-		}
-
-		switch userInfo.cmdType {
-		case funcTypeJishi:
-			var notes []model.Note
-			if err := db.Where("id in ?", ids).Find(&notes).Error; err != nil {
-				errMsg := fmt.Sprintf("查询待删除内容失败：%v", err.Error())
-				logrus.Errorf(errMsg)
-				ctx.SendChain(message.Text(errMsg))
-				return
-			}
-			if err := db.Debug().Model(&model.Note{}).Where("id in ?", ids).Updates(map[string]interface{}{"is_delete": Deleted}).Error; err != nil {
-				errMsg := fmt.Sprintf("删除失败：%v", err.Error())
-				logrus.Errorf(errMsg)
-				ctx.SendChain(message.Text(errMsg))
-				return
-			}
-		case funcTypeAutoRemind:
-			var tasks []model.Remind
-			if err := db.Where("id in ?", ids).Find(&tasks).Error; err != nil {
-				errMsg := fmt.Sprintf("查询待删除内容失败：%v", err.Error())
-				logrus.Errorf(errMsg)
-				ctx.SendChain(message.Text(errMsg))
-				return
-			}
-			if err := db.Debug().Model(&model.Remind{}).Where("id in ?", ids).Updates(map[string]interface{}{"status": TaskStatusOff}).Error; err != nil {
-				errMsg := fmt.Sprintf("删除失败：%v", err.Error())
-				logrus.Errorf(errMsg)
-				ctx.SendChain(message.Text(errMsg))
-				return
-			}
-		}
 	})
 
 	// 保存收到的图文
@@ -304,7 +237,7 @@ func init() {
 			idMap[i+1] = task.ID // 记事列表id映射关系
 		}
 		// 保存该用户记事列表id映射关系
-		userInfos[qqNumber] = userInfo{cmdType: funcTypeJishi, idMap: idMap}
+		userInfos[qqNumber] = userInfo{cmdType: funcTypeAutoRemind, idMap: idMap}
 
 		// 把多个单独消息拼接成一条长消息
 		var endMsg []message.MessageSegment
@@ -318,6 +251,93 @@ func init() {
 			endMsg = append(endMsg, msg...)
 		}
 		ctx.SendChain(endMsg...)
+	})
+
+	// 删除记事
+	engine.OnPrefixGroup([]string{"del"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		args := ctx.State["args"].(string)
+		fmt.Printf("要删除的序号=%v\n", args)
+		userInfo, ok := userInfos[ctx.Event.Sender.ID]
+		if !ok {
+			ctx.SendChain(message.Text("请先查询出你要删除的内容"))
+			return
+		}
+		fmt.Printf("userInfo=%v\n", userInfo)
+		tmpIds := extractIds(args)
+		var ids []uint
+		for _, tmpId := range tmpIds {
+			ids = append(ids, userInfo.idMap[tmpId])
+		}
+		fmt.Printf("要删除的id=%v\n", ids)
+		db := GetDB()
+
+		var whichModel interface{}
+		var errMsg string
+		var updates map[string]interface{}
+		var resultList []map[string]interface{}
+
+		switch userInfo.cmdType {
+		case funcTypeJishi:
+			whichModel = model.Note{}
+			updates = map[string]interface{}{"is_delete": Deleted}
+		case funcTypeAutoRemind:
+			whichModel = model.Remind{}
+			updates = map[string]interface{}{"status": TaskStatusOff}
+		default:
+			errMsg = fmt.Sprintf("未知命令类型%v", userInfo.cmdType)
+			logrus.Errorf(errMsg)
+			ctx.SendChain(message.Text(errMsg))
+			return
+		}
+
+		if err := db.Debug().Model(&whichModel).Where("id in (?)", ids).Scan(&resultList).Error; err != nil {
+			errMsg = fmt.Sprintf("查询待删除内容失败：%v", err.Error())
+			logrus.Errorf(errMsg)
+			ctx.SendChain(message.Text(errMsg))
+			return
+		}
+		logrus.Infof("待删除内容resultList=%v", resultList)
+		var mList []message.Message
+		var segList []message.MessageSegment
+		for _, result := range resultList {
+			m := message.ParseMessageFromString(result["content"].(string) + "\n")
+			mList = append(mList, m)
+			segList = append(segList, m...)
+		}
+
+		// 把多个单独消息拼接成一条长消息
+		endMsg := []message.MessageSegment{message.Text("是否确认删除？\n")}
+		for i, msg := range mList {
+			if i != 0 { // 两条消息之间添加换行
+				endMsg = append(endMsg, message.Text("\n"))
+			}
+			endMsg = append(endMsg, message.Text(i+1, ". ")) // 给每条笔记添加序号
+			endMsg = append(endMsg, msg...)
+		}
+		// 发送要删除的内容，询问用户是否确认删除
+		ctx.Send(endMsg)
+		next := zero.NewFutureEvent("message", 999, true, ctx.CheckSession(), func(ctx *zero.Ctx) bool {
+			return php2go.InArray(strings.TrimSpace(ctx.Event.RawMessage), []string{"y", "yes", "是", "确认"})
+		}).Next()
+		for {
+			select {
+			case <-time.After(time.Second * 30):
+				ctx.SendChain(message.Text("未确认，删除操作取消"))
+				logrus.Infoln("未确认，删除操作取消")
+				return
+			case <-next:
+				updateResult := db.Debug().Model(&whichModel).Where("id in (?)", ids).Updates(updates)
+				if updateResult.Error != nil {
+					errMsg = fmt.Sprintf("删除失败：%v", updateResult.Error)
+					logrus.Errorf(errMsg)
+					ctx.SendChain(message.Text(errMsg))
+					return
+				}
+
+				ctx.SendChain(message.Text(fmt.Sprintf("应删：%v，实删%v", len(ids), updateResult.RowsAffected)))
+				return
+			}
+		}
 	})
 }
 
