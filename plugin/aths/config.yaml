@@ -1,9 +1,9 @@
 mysql:
   host: 47.97.249.149
   port: 3306
-  user: aths_test
-  password: aths_test
-  dbname: robot_test
+  user: aths
+  password: jbjyaths296495
+  dbname: robot
 
 system:
   auto_restart: true
