@@ -176,7 +176,7 @@ func init() {
 			return
 		}
 
-		ctx.SendChain(message.Text(finalCQCode))
+		ctx.Send(ctx.Event.Message)
 	})
 
 	// 查看记事
