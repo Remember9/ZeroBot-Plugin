@@ -184,7 +184,7 @@ func init() {
 	engine.OnPrefixGroup(ckjsPrefix).SetBlock(false).Handle(func(ctx *zero.Ctx) {
 		params := removePrefix(ctx.Event.RawMessage, ckjsPrefix)
 		qqNumber := ctx.Event.Sender.ID
-		notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), funcTypeJishi, params, 10)
+		notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), funcTypeJishi, params, -1)
 		logrus.Infof("params=%v, notes=%v", params, notes)
 		if err != nil {
 			logrus.Errorf("查询笔记失败：%v", err)
