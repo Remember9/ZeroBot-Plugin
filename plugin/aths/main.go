@@ -447,7 +447,7 @@ func queryNotes(userId string, noteType int8, keyword string, limit int) ([]mode
 	db := GetDB()
 	var notes []model.Note
 	//queryDb := db.Select("id, content, note_url").Where(model.Note{QQNumber: userId, Type: noteType, IsDelete: 0}).Order("cdate desc")
-	queryDb := db.Where(model.Note{QQNumber: userId, Type: noteType, IsDelete: 0}).Order("cdate desc")
+	queryDb := db.Where(model.Note{QQNumber: userId, Type: noteType, IsDelete: 0}, "qq_number", "type", "is_delete").Order("cdate desc")
 	if keyword != "" {
 		queryDb.Where("content like ?", "%"+keyword+"%")
 	}
