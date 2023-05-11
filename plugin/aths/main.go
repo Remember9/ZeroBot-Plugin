@@ -61,15 +61,7 @@ var userInfos map[int64]userInfo
 var topicIdMap map[int]string
 var topicNameMap map[string]int
 
-func init() {
-	userInfos = make(map[int64]userInfo)
-	// 注册艾涛浩斯引擎
-	engine := control.Register("js", &ctrl.Options[*zero.Ctx]{
-		DisableOnDefault: false,
-		Brief:            "艾涛浩斯记事本",
-		Help:             "- js+[要发送的图片]",
-	})
-
+func buildTopicMap() {
 	topicIdMap = make(map[int]string)
 	db := GetDB()
 	var reminds []model.Remind
@@ -83,6 +75,19 @@ func init() {
 			topicNameMap[strings.TrimSpace(topicName)] = remind.TopicId
 		}
 	}
+}
+
+func init() {
+	userInfos = make(map[int64]userInfo)
+	// 注册艾涛浩斯引擎
+	engine := control.Register("js", &ctrl.Options[*zero.Ctx]{
+		DisableOnDefault: false,
+		Brief:            "艾涛浩斯记事本",
+		Help:             "- js+[要发送的图片]",
+	})
+
+	// 构建话题id与name的映射
+	buildTopicMap()
 
 	// 开启一个定时器，定时查询表中是否有到时间的提醒
 	go func() {
@@ -111,7 +116,7 @@ func init() {
 			return
 		}
 
-		if nextRemind.Time.Before(time.Now().Add(time.Minute)) {
+		if nextRemind.Time.Before(time.Now().Add(time.Minute)) || (nextRemind.Time.After(time.Now()) && nextRemind.Time.Minute() <= time.Now().Minute()) {
 			logrus.Info("解析失败：计划提醒时间必须在一分钟之后")
 			ctx.SendChain(message.Text("计划提醒时间必须在一分钟之后"))
 			return
@@ -229,7 +234,10 @@ func init() {
 			ctx.SendChain(message.Text("话题插入失败"))
 			return
 		}
-		ctx.SendChain(message.Text("话题插入成功"))
+		// 构建话题id与name的映射
+		buildTopicMap()
+
+		ctx.SendChain(message.Text("新建话题成功"))
 	})
 
 	// 查看单个话题内容
@@ -273,6 +281,46 @@ func init() {
 			endMsg = append(endMsg, msg...)
 		}
 		ctx.SendChain(endMsg...)
+	})
+
+	// 设置话题提醒频率
+	engine.OnPrefixGroup([]string{"sztx", "话题提醒"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		args := ctx.State["args"].(string)
+		fields := strings.Fields(args)
+		if len(fields) != 2 {
+			logrus.Info("解析失败：参数必须为话题名和提醒频率2个值")
+			ctx.SendChain(message.Text("参数必须为话题名和提醒频率2个值"))
+			return
+		}
+		topicName, frequency := fields[0], fields[1]
+		topicId, ok := topicNameMap[topicName]
+		if !ok {
+			logrus.Errorf("话题不存在")
+			ctx.SendChain(message.Text("话题不存在"))
+			return
+		}
+		nextRemind, err := remindResolve(frequency)
+		if err != nil {
+			logrus.Info("提醒规则解析失败：" + err.Error())
+			ctx.SendChain(message.Text("提醒规则解析失败：" + err.Error()))
+			return
+		}
+
+		if nextRemind.Time.Before(time.Now().Add(time.Minute)) || (nextRemind.Time.After(time.Now()) && nextRemind.Time.Minute() <= time.Now().Minute()) {
+			logrus.Info("解析失败：计划提醒时间必须在一分钟之后")
+			ctx.SendChain(message.Text("计划提醒时间必须在一分钟之后"))
+			return
+		}
+		qqNumber := strconv.FormatInt(ctx.Event.Sender.ID, 10)
+
+		db := GetDB()
+		db.Model(&model.Remind{}).Where("qq_number = ? AND topic_id = ?", qqNumber, topicId).Updates(model.Remind{
+			NextRemindTime: nextRemind.Time,
+			RemindRule:     nextRemind.RemindRule,
+			IsRepeat:       int8(map[bool]int{false: 0, true: 1}[nextRemind.IsRepeat]),
+		})
+
+		ctx.SendChain(message.Text(fmt.Sprintf("好的，%s我会把话题：%s的内容发给你", nextRemind.RemindRule, topicName)))
 	})
 
 	// 查看记事
