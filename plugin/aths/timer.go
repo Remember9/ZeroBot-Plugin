@@ -15,6 +15,7 @@ import (
 const (
 	TaskTypeReview = 1
 	TaskTypeTodo   = 2
+	TaskTypeTopic  = 3
 
 	TaskStatusOn  = 1
 	TaskStatusOff = 0
@@ -74,7 +75,7 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 	var reminds []map[string]interface{}
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
 	if err := remindDB.Debug().Model(&model.Remind{}).Select("id, next_remind_time, content, last_remind_time, remind_rule, qq_number, group_number, is_repeat").
-		Where("type = ? AND status = ? AND next_remind_time <= ?", TaskTypeTodo, TaskStatusOn, nowStr).
+		Where("type in ? AND status = ? AND next_remind_time <= ?", []int{TaskTypeTodo, TaskTypeTopic}, TaskStatusOn, nowStr).
 		Find(&reminds).Error; err != nil {
 		logrus.Errorf("[CheckReminderEvents] Failed to get reminder events: %v", err)
 		return
@@ -82,26 +83,58 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 	fmt.Printf("@@@@@@@@@@@@@@@@@@@@@reminds=%v\n", reminds)
 	update := make([]map[string]interface{}, 0)
 	for _, row := range reminds {
-		sendContent := ""
-		if row["content"] != nil && row["content"].(string) != "" {
-			sendContent = row["content"].(string)
-		} else {
-			sendContent = "到点了，到点了！(" + row["remind_rule"].(string) + ")"
-		}
-		qqNumber, _ := strconv.Atoi((row["qq_number"].(string)))
-		groupNumber, _ := strconv.Atoi((row["group_number"].(string)))
+		qqNumber, _ := strconv.Atoi(row["qq_number"].(string))
+		groupNumber, _ := strconv.Atoi(row["group_number"].(string))
 		if qqNumber != 164212720 {
 			continue
 		}
-		// 私发提醒
-		println("@@@@@@@@@@@@@@@@@@@@@   groupNumber", groupNumber)
-		println("@@@@@@@@@@@@@@@@@@@@@   qqNumber", qqNumber)
-		ctx.SendPrivateMessage(int64(qqNumber), message.Text(sendContent))
-		// 如果是在群里建立的定时提醒，还会在群里at并提醒
-		if row["group_number"] != nil && row["group_number"].(string) != "0" {
-			msg := message.Message{message.At(int64(qqNumber)), message.Text(sendContent)}
-			ctx.SendGroupMessage(int64(groupNumber), msg)
+		// 如果是话题提醒
+		if row["type"] == TaskTypeTopic {
+			db := GetDB()
+			var notes []model.Note
+			db.Debug().Where("qq_number=? AND type = ? AND is_delete=?", row["qq_number"].(string), row["topic_id"], NoDeleted).Order("cdate desc").Find(&notes)
+			// 把notes拼接成一条消息
+			var mList []message.Message
+			var segList []message.MessageSegment
+			idMap := map[int]uint{}
+			for i, note := range notes {
+				m := message.ParseMessageFromString(note.Content + "\n")
+				mList = append(mList, m)
+				segList = append(segList, m...)
+				idMap[i+1] = note.ID // 记事列表id映射关系
+			}
+			// 把多个单独消息拼接成一条长消息
+			var endMsg []message.MessageSegment
+			for i, msg := range mList {
+				// 将CQ码中的图片URL替换为本地路径
+				msg := replaceImageUrlWithLocalPath(msg, int64(qqNumber))
+				if i != 0 { // 两条消息之间添加换行
+					endMsg = append(endMsg, message.Text("\n"))
+				}
+				endMsg = append(endMsg, message.Text(i+1, ". ")) // 给每条笔记添加序号
+				endMsg = append(endMsg, msg...)
+			}
+			ctx.SendChain(endMsg...)
+		} else if row["type"] == TaskTypeTodo {
+			sendContent := ""
+			if row["content"] != nil && row["content"].(string) != "" {
+				sendContent = row["content"].(string)
+			} else {
+				sendContent = "到点了，到点了！(" + row["remind_rule"].(string) + ")"
+			}
+			// 私发提醒
+			println("@@@@@@@@@@@@@@@@@@@@@   groupNumber", groupNumber)
+			println("@@@@@@@@@@@@@@@@@@@@@   qqNumber", qqNumber)
+			ctx.SendPrivateMessage(int64(qqNumber), message.Text(sendContent))
+			// 如果是在群里建立的定时提醒，还会在群里at并提醒
+			if row["group_number"] != nil && row["group_number"].(string) != "0" {
+				msg := message.Message{message.At(int64(qqNumber)), message.Text(sendContent)}
+				ctx.SendGroupMessage(int64(groupNumber), msg)
+			}
+		} else {
+			ctx.SendPrivateMessage(int64(qqNumber), message.Text("未知提醒类型: "+row["type"].(string)))
 		}
+		// 发送结束后更新下次提醒时间
 		status := TaskStatusOff
 		if row["is_repeat"].(int8) == 1 {
 			status = TaskStatusOn
