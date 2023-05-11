@@ -43,6 +43,18 @@ var remindRules = map[int]*regexp.Regexp{
 	TypePerDay:                         regexp.MustCompile(`^每天(\d+)点(\d+)?(?:分)?$`),
 }
 
+//var remindRules = map[int]*regexp.Regexp{
+//	TypeMinute:                         regexp.MustCompile(`^(\d+)分(?:钟)?后$`),
+//	TypeHour:                           regexp.MustCompile(`^(\d+)小时后$`),
+//	TypeTodaySpecifyTime:               regexp.MustCompile(`^(?:早上|晚上|中午|下午)(\d+)点(\d+)?(?:分)?$`),
+//	TypeTomorrowSpecifyTime:            regexp.MustCompile(`^明天(?:早上|晚上|中午|下午)(\d+)点(\d+)?(?:分)?$`),
+//	TypeTheDayAfterTomorrowSpecifyTime: regexp.MustCompile(`^后天(?:早上|晚上|中午|下午)(\d+)点(\d+)?(?:分)?$`),
+//	TypeYmdhms:                         regexp.MustCompile(`^(\d+)月(\d+)(?:日|号)(?:早上|晚上|中午|下午)(\d+)点(\d+)?(?:分)?$`),
+//	TypePerMinute:                      regexp.MustCompile(`^每(\d+)分(?:钟)?$`),
+//	TypePerHour:                        regexp.MustCompile(`^每(\d+)小时$`),
+//	TypePerDay:                         regexp.MustCompile(`^每天(?:早上|晚上|中午|下午)(\d+)点(\d+)?(?:分)?$`),
+//}
+
 type RemindData struct {
 	RemindQQ   string
 	Time       time.Time
@@ -74,7 +86,7 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 	}
 	var reminds []map[string]interface{}
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
-	if err := remindDB.Debug().Model(&model.Remind{}).Select("id, next_remind_time, content, last_remind_time, remind_rule, qq_number, group_number, is_repeat").
+	if err := remindDB.Debug().Model(&model.Remind{}).Select("id, type, next_remind_time, content, last_remind_time, remind_rule, qq_number, group_number, is_repeat").
 		Where("type in ? AND status = ? AND next_remind_time <= ?", []int{TaskTypeTodo, TaskTypeTopic}, TaskStatusOn, nowStr).
 		Find(&reminds).Error; err != nil {
 		logrus.Errorf("[CheckReminderEvents] Failed to get reminder events: %v", err)
@@ -89,7 +101,7 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 			continue
 		}
 		// 如果是话题提醒
-		if row["type"] == TaskTypeTopic {
+		if row["type"].(int8) == TaskTypeTopic {
 			db := GetDB()
 			var notes []model.Note
 			db.Debug().Where("qq_number=? AND type = ? AND is_delete=?", row["qq_number"].(string), row["topic_id"], NoDeleted).Order("cdate desc").Find(&notes)
@@ -115,7 +127,7 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 				endMsg = append(endMsg, msg...)
 			}
 			ctx.SendChain(endMsg...)
-		} else if row["type"] == TaskTypeTodo {
+		} else if row["type"].(int8) == TaskTypeTodo {
 			sendContent := ""
 			if row["content"] != nil && row["content"].(string) != "" {
 				sendContent = row["content"].(string)
@@ -268,7 +280,6 @@ func remindResolve(remindMsg string) (RemindData, error) {
 		} else {
 			nextRemindTime = time.Date(nextRemindTime.Year(), nextRemindTime.Month(), nextRemindTime.Day(), hour, minute, 0, 0, nextRemindTime.Location())
 		}
-		nextRemindTime = nextRemindTime.AddDate(0, 0, 1)
 	}
 
 	remindData := RemindData{

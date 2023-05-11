@@ -63,6 +63,7 @@ var topicNameMap map[string]int
 
 func buildTopicMap() {
 	topicIdMap = make(map[int]string)
+	topicNameMap = make(map[string]int)
 	db := GetDB()
 	var reminds []model.Remind
 	db.Model(&model.Remind{}).Select("DISTINCT topic_id, topic_name").Find(&reminds)
@@ -87,7 +88,10 @@ func init() {
 	})
 
 	// 构建话题id与name的映射
-	buildTopicMap()
+	go func() {
+		time.Sleep(1 * time.Second)
+		buildTopicMap()
+	}()
 
 	// 开启一个定时器，定时查询表中是否有到时间的提醒
 	go func() {
@@ -116,7 +120,7 @@ func init() {
 			return
 		}
 
-		if nextRemind.Time.Before(time.Now().Add(time.Minute)) || (nextRemind.Time.After(time.Now()) && nextRemind.Time.Minute() <= time.Now().Minute()) {
+		if nextRemind.Time.Before(time.Now().Add(time.Minute)) {
 			logrus.Info("解析失败：计划提醒时间必须在一分钟之后")
 			ctx.SendChain(message.Text("计划提醒时间必须在一分钟之后"))
 			return
@@ -202,9 +206,74 @@ func init() {
 		ctx.Send(ctx.Event.Message)
 	})
 
-	// 新建话题
-	engine.OnPrefixGroup([]string{"xjht", "新建话题"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+	// 给话题里添加内容
+	topicNames := []string{"tjht", "添加话题"}
+	engine.OnPrefixGroup(topicNames).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		qqNumber := ctx.Event.Sender.ID
 		args := ctx.State["args"].(string)
+		fields := strings.Fields(args)
+		if len(fields) < 2 {
+			logrus.Info("解析失败：参数必须为话题名和内容2个值")
+			ctx.SendChain(message.Text("参数必须为话题名和提醒频率2个值"))
+			return
+		}
+		topicName := fields[0]
+		for _, elem := range ctx.Event.Message {
+			switch elem.Type {
+			case "image":
+				if url := elem.Data["url"]; url != "" {
+					filename, err := downloadImage(ctx, url, qqNumber, 3)
+					if err != nil {
+						logrus.Info(fmt.Sprintf("图片%v下载失败", url))
+						return
+					}
+					elem.Data["local_name"] = filename
+				}
+			}
+		}
+		// 修改后的消息重新生成CQ码
+		finalCQCode := ctx.Event.Message.CQCode()
+
+		// 去除命令前缀
+		for _, prefix := range topicNames {
+			if strings.HasPrefix(finalCQCode, prefix) {
+				finalCQCode = strings.TrimPrefix(finalCQCode, prefix)
+				finalCQCode = strings.TrimLeft(finalCQCode, " ")
+				break
+			}
+		}
+		// 去除话题名
+		finalCQCode = strings.TrimPrefix(finalCQCode, topicName)
+		finalCQCode = strings.TrimLeft(finalCQCode, " ")
+		logrus.Info("最终要入库的CQ码消息=", finalCQCode)
+
+		note := &model.Note{
+			QQNumber: strconv.FormatInt(qqNumber, 10),
+			Type:     topicNameMap[topicName],
+			IsReview: 0,
+			Content:  finalCQCode,
+			CDate:    time.Now(),
+		}
+		err := GetDB().Create(note).Error
+		if err != nil {
+			logrus.Errorf("话题内容插入失败, note=%v, err=%s", *note, err.Error())
+			ctx.SendChain(message.Text("话题内容插入失败"))
+			return
+		}
+
+		ctx.Send(ctx.Event.Message)
+	})
+
+	// 新建话题
+	engine.OnPrefixGroup([]string{"xjht", "新建话题", "cjht", "创建话题"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		args := ctx.State["args"].(string)
+		//_, ok := topicNameMap[strings.TrimSpace(args)]
+		// 不允许存在相同名称的话题
+		//if ok {
+		//	logrus.Errorf(fmt.Sprintf("话题%s已存在，不允许存在相同名称的话题", args))
+		//	ctx.SendChain(message.Text(fmt.Sprintf("话题%s已存在，不允许存在相同名称的话题", args)))
+		//	return
+		//}
 		qqNumber := ctx.Event.Sender.ID
 		GroupID := ctx.Event.GroupID
 		var maxTopicId int
@@ -237,7 +306,7 @@ func init() {
 		// 构建话题id与name的映射
 		buildTopicMap()
 
-		ctx.SendChain(message.Text("新建话题成功"))
+		ctx.SendChain(message.Text(fmt.Sprintf("新建话题：%s成功", args)))
 	})
 
 	// 查看单个话题内容
@@ -252,10 +321,15 @@ func init() {
 		}
 		params := removePrefix(ctx.Event.RawMessage, ckhtPrefix)
 		qqNumber := ctx.Event.Sender.ID
-		notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), topicId, params, -1)
+		notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), topicId, "", -1)
 		logrus.Infof("params=%v, notes=%v", params, notes)
 		if err != nil {
 			logrus.Errorf("查询笔记失败：%v", err)
+		}
+		if len(notes) == 0 {
+			logrus.Info("话题数量为0")
+			ctx.SendChain(message.Text("话题数量为0"))
+			return
 		}
 		var mList []message.Message
 		var segList []message.MessageSegment
@@ -306,7 +380,8 @@ func init() {
 			return
 		}
 
-		if nextRemind.Time.Before(time.Now().Add(time.Minute)) || (nextRemind.Time.After(time.Now()) && nextRemind.Time.Minute() <= time.Now().Minute()) {
+		fmt.Printf("nextRemind.Time=%v", nextRemind.Time)
+		if nextRemind.Time.Before(time.Now().Add(time.Minute)) {
 			logrus.Info("解析失败：计划提醒时间必须在一分钟之后")
 			ctx.SendChain(message.Text("计划提醒时间必须在一分钟之后"))
 			return
@@ -421,7 +496,7 @@ func init() {
 		var resultList []map[string]interface{}
 
 		switch userInfo.cmdType {
-		case funcTypeJishi:
+		case funcTypeJishi, funcTypeTopic:
 			whichModel = model.Note{}
 			updates = map[string]interface{}{"is_delete": Deleted}
 		case funcTypeAutoRemind:
