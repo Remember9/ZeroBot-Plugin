@@ -34,6 +34,7 @@ const (
 	funcTypeTodayLearn
 	funcTypeAutoReview
 	funcTypeAutoRemind
+	funcTypeTopic
 )
 
 const (
@@ -57,6 +58,9 @@ type userInfo struct {
 
 var userInfos map[int64]userInfo
 
+var topicIdMap map[int]string
+var topicNameMap map[string]int
+
 func init() {
 	userInfos = make(map[int64]userInfo)
 	// 注册艾涛浩斯引擎
@@ -65,6 +69,20 @@ func init() {
 		Brief:            "艾涛浩斯记事本",
 		Help:             "- js+[要发送的图片]",
 	})
+
+	topicIdMap = make(map[int]string)
+	db := GetDB()
+	var reminds []model.Remind
+	db.Model(&model.Remind{}).Select("DISTINCT topic_id, topic_name").Find(&reminds)
+	for _, remind := range reminds {
+		// 建立topic_id和topic_name的映射关系
+		topicIdMap[remind.TopicId] = remind.TopicName
+		// 建立topic_name和topic_id的映射关系
+		topicNames := strings.Split(remind.TopicName, ",")
+		for _, topicName := range topicNames {
+			topicNameMap[strings.TrimSpace(topicName)] = remind.TopicId
+		}
+	}
 
 	// 开启一个定时器，定时查询表中是否有到时间的提醒
 	go func() {
@@ -212,6 +230,49 @@ func init() {
 			return
 		}
 		ctx.SendChain(message.Text("话题插入成功"))
+	})
+
+	// 查看单个话题内容
+	ckhtPrefix := []string{"ckht", "查看话题"}
+	engine.OnPrefixGroup(ckhtPrefix).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		args := ctx.State["args"].(string)
+		topicId, ok := topicNameMap[strings.TrimSpace(args)]
+		if !ok {
+			logrus.Errorf("话题不存在")
+			ctx.SendChain(message.Text("话题不存在"))
+			return
+		}
+		params := removePrefix(ctx.Event.RawMessage, ckhtPrefix)
+		qqNumber := ctx.Event.Sender.ID
+		notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), topicId, params, -1)
+		logrus.Infof("params=%v, notes=%v", params, notes)
+		if err != nil {
+			logrus.Errorf("查询笔记失败：%v", err)
+		}
+		var mList []message.Message
+		var segList []message.MessageSegment
+		idMap := map[int]uint{}
+		for i, note := range notes {
+			m := message.ParseMessageFromString(note.Content + "\n")
+			mList = append(mList, m)
+			segList = append(segList, m...)
+			idMap[i+1] = note.ID // 记事列表id映射关系
+		}
+		// 保存该用户话题列表id映射关系
+		userInfos[qqNumber] = userInfo{cmdType: funcTypeTopic, idMap: idMap}
+
+		// 把多个单独消息拼接成一条长消息
+		var endMsg []message.MessageSegment
+		for i, msg := range mList {
+			// 将CQ码中的图片URL替换为本地路径
+			msg := replaceImageUrlWithLocalPath(msg, qqNumber)
+			if i != 0 { // 两条消息之间添加换行
+				endMsg = append(endMsg, message.Text("\n"))
+			}
+			endMsg = append(endMsg, message.Text(i+1, ". ")) // 给每条笔记添加序号
+			endMsg = append(endMsg, msg...)
+		}
+		ctx.SendChain(endMsg...)
 	})
 
 	// 查看记事
@@ -478,7 +539,7 @@ func downloadImage(ctx *zero.Ctx, url string, senderId int64, maxRetry int) (str
 	return filename, nil
 }
 
-func queryNotes(userId string, noteType int8, keyword string, limit int) ([]model.Note, error) {
+func queryNotes(userId string, noteType int, keyword string, limit int) ([]model.Note, error) {
 	db := GetDB()
 	var notes []model.Note
 	//queryDb := db.Select("id, content, note_url").Where(model.Note{QQNumber: userId, Type: noteType, IsDelete: 0}).Order("cdate desc")

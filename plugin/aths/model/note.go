@@ -6,7 +6,7 @@ import (
 
 type Note struct {
 	ID             uint      `gorm:"column:id;primaryKey"`
-	Type           int8      `gorm:"column:type;type:tinyint;not null;default:0;comment:'笔记类型'"`
+	Type           int       `gorm:"column:type;type:tinyint;not null;default:0;comment:'笔记类型'"`
 	QQNumber       string    `gorm:"column:qq_number;type:varchar(10);not null;default:'0';comment:'QQ号码'"`
 	GroupNumber    string    `gorm:"column:group_number;type:varchar(10);not null;default:'0';comment:'群号码'"`
 	Content        string    `gorm:"column:content;type:text;not null;comment:'笔记内容'"`
