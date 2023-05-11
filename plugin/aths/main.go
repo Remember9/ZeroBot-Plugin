@@ -179,6 +179,41 @@ func init() {
 		ctx.Send(ctx.Event.Message)
 	})
 
+	// 新建话题
+	engine.OnPrefixGroup([]string{"xjht", "新建话题"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		args := ctx.State["args"].(string)
+		qqNumber := ctx.Event.Sender.ID
+		GroupID := ctx.Event.GroupID
+		var maxTopicId int
+		topicIdStart := 100
+		db := GetDB()
+		var err error
+		if err = db.Model(&model.Remind{}).Select("MAX(topic_id)").Scan(&maxTopicId).Error; err != nil {
+			logrus.Errorf("查询最大topic_id失败, err=%s", err.Error())
+			ctx.SendChain(message.Text("查询最大topic_id失败"))
+			return
+		}
+		if maxTopicId == 0 {
+			maxTopicId = topicIdStart
+		}
+		newTopicId := maxTopicId + 1 // 新话题ID
+		note := &model.Remind{
+			QQNumber:    strconv.FormatInt(qqNumber, 10),
+			Type:        TaskTypeTopic,
+			GroupNumber: strconv.FormatInt(GroupID, 10),
+			Status:      TaskStatusOff, // 刚创建时默认不加入自动提醒
+			CDate:       time.Now(),
+			TopicId:     newTopicId,
+			TopicName:   args,
+		}
+		if err = db.Create(note).Error; err != nil {
+			logrus.Errorf("话题插入失败, note=%v, err=%s", *note, err.Error())
+			ctx.SendChain(message.Text("话题插入失败"))
+			return
+		}
+		ctx.SendChain(message.Text("话题插入成功"))
+	})
+
 	// 查看记事
 	ckjsPrefix := []string{"ckjs", "查看记事"}
 	engine.OnPrefixGroup(ckjsPrefix).SetBlock(false).Handle(func(ctx *zero.Ctx) {
