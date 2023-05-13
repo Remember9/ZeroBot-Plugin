@@ -86,7 +86,7 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 	}
 	var reminds []map[string]interface{}
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
-	if err := remindDB.Debug().Model(&model.Remind{}).Select("id, type, next_remind_time, content, last_remind_time, remind_rule, qq_number, group_number, is_repeat").
+	if err := remindDB.Debug().Model(&model.Remind{}).
 		Where("type in ? AND status = ? AND next_remind_time <= ?", []int{TaskTypeTodo, TaskTypeTopic}, TaskStatusOn, nowStr).
 		Find(&reminds).Error; err != nil {
 		logrus.Errorf("[CheckReminderEvents] Failed to get reminder events: %v", err)
@@ -104,11 +104,12 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 		if row["type"].(int8) == TaskTypeTopic {
 			db := GetDB()
 			var notes []model.Note
-			db.Debug().Where("qq_number=? AND type = ? AND is_delete=?", row["qq_number"].(string), row["topic_id"], NoDeleted).Order("cdate desc").Find(&notes)
+			db.Debug().Where("qq_number=? AND type = ? AND is_delete=?", row["qq_number"].(string), row["topic_id"].(int), NoDeleted).Order("cdate desc").Find(&notes)
 			// 把notes拼接成一条消息
 			var mList []message.Message
 			var segList []message.MessageSegment
 			idMap := map[int]uint{}
+			fmt.Printf("话题notes=%v\n", notes)
 			for i, note := range notes {
 				m := message.ParseMessageFromString(note.Content + "\n")
 				mList = append(mList, m)
@@ -117,6 +118,7 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 			}
 			// 把多个单独消息拼接成一条长消息
 			var endMsg []message.MessageSegment
+			endMsg = append(endMsg, message.Text(fmt.Sprintf("话题名：%s\n", row["topic_name"].(string))))
 			for i, msg := range mList {
 				// 将CQ码中的图片URL替换为本地路径
 				msg := replaceImageUrlWithLocalPath(msg, int64(qqNumber))
@@ -126,7 +128,7 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 				endMsg = append(endMsg, message.Text(i+1, ". ")) // 给每条笔记添加序号
 				endMsg = append(endMsg, msg...)
 			}
-			ctx.SendChain(endMsg...)
+			ctx.SendPrivateMessage(int64(qqNumber), endMsg)
 		} else if row["type"].(int8) == TaskTypeTodo {
 			sendContent := ""
 			if row["content"] != nil && row["content"].(string) != "" {
@@ -192,11 +194,6 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 	// 根据remind_rule更新next_remind_time
 	logrus.Infof("@@@@@@@@@@@@@@@@@@@@@update=%v", update)
 	logrus.Infof("@@@@@@@@@@@@@@@@@@@@@len update=%v", len(update))
-	if len(update) > 0 {
-		//result := remindDB.Clauses(clause.OnConflict{DoUpdates: clause.AssignmentColumns([]string{"last_remind_time", "status", "next_remind_time"})}).
-		//	Create(&update)
-
-	}
 
 	etime := time.Now().Unix()
 	logStr += "耗时：" + strconv.FormatInt(etime-stime, 10) + "秒"
@@ -247,6 +244,7 @@ func remindResolve(remindMsg string) (RemindData, error) {
 	}
 
 	nextRemindTime := time.Now()
+	isRepeat := false
 	switch matchType {
 	case TypeMinute, TypePerMinute:
 		minute, _ := strconv.Atoi(remindParams[0])
@@ -280,6 +278,7 @@ func remindResolve(remindMsg string) (RemindData, error) {
 		} else {
 			nextRemindTime = time.Date(nextRemindTime.Year(), nextRemindTime.Month(), nextRemindTime.Day(), hour, minute, 0, 0, nextRemindTime.Location())
 		}
+		isRepeat = true
 	}
 
 	remindData := RemindData{
@@ -287,7 +286,7 @@ func remindResolve(remindMsg string) (RemindData, error) {
 		Time:       nextRemindTime,
 		RemindRule: todoRule,
 		Content:    todoThing,
-		IsRepeat:   matchType >= TypePerMinute && matchType <= TypePerDay,
+		IsRepeat:   isRepeat,
 	}
 
 	return remindData, nil

@@ -89,7 +89,7 @@ func init() {
 
 	// 构建话题id与name的映射
 	go func() {
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
 		buildTopicMap()
 	}()
 
@@ -345,6 +345,7 @@ func init() {
 
 		// 把多个单独消息拼接成一条长消息
 		var endMsg []message.MessageSegment
+		endMsg = append(endMsg, message.Text(fmt.Sprintf("话题名：%s\n", strings.TrimSpace(args))))
 		for i, msg := range mList {
 			// 将CQ码中的图片URL替换为本地路径
 			msg := replaceImageUrlWithLocalPath(msg, qqNumber)
@@ -389,11 +390,12 @@ func init() {
 		qqNumber := strconv.FormatInt(ctx.Event.Sender.ID, 10)
 
 		db := GetDB()
-		db.Model(&model.Remind{}).Where("qq_number = ? AND topic_id = ?", qqNumber, topicId).Updates(model.Remind{
-			NextRemindTime: nextRemind.Time,
-			RemindRule:     nextRemind.RemindRule,
-			IsRepeat:       int8(map[bool]int{false: 0, true: 1}[nextRemind.IsRepeat]),
-		})
+		updateFields := map[string]interface{}{
+			"next_remind_time": nextRemind.Time,
+			"remind_rule":      nextRemind.RemindRule,
+			"is_repeat":        int8(map[bool]int{false: 0, true: 1}[nextRemind.IsRepeat]),
+		}
+		db.Model(&model.Remind{}).Where("qq_number = ? AND topic_id = ?", qqNumber, topicId).Updates(updateFields)
 
 		ctx.SendChain(message.Text(fmt.Sprintf("好的，%s我会把话题：%s的内容发给你", nextRemind.RemindRule, topicName)))
 	})
@@ -442,7 +444,7 @@ func init() {
 		var cronTasks []model.Remind
 		db := GetDB()
 		if err := db.Debug().Where("qq_number =? and status=?", qqNumber, TaskStatusOn).Find(&cronTasks).Error; err != nil {
-			logrus.Errorf("查询笔记失败：%v", err.Error)
+			logrus.Errorf("查询笔记失败：%v", err.Error())
 			return
 		}
 		logrus.Infof("params=%v, cronTasks=%v", params, cronTasks)
@@ -470,6 +472,55 @@ func init() {
 			endMsg = append(endMsg, msg...)
 		}
 		ctx.SendChain(endMsg...)
+	})
+
+	// 查看定时任务
+	engine.OnPrefixGroup([]string{"qbht", "全部话题"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		qqNumber := ctx.Event.Sender.ID
+		var topicTasks []model.Remind
+		db := GetDB()
+		if err := db.Debug().Where("type =? and qq_number =?", TaskTypeTopic, qqNumber).Find(&topicTasks).Error; err != nil {
+			logrus.Errorf("查询话题失败：%v", err.Error())
+			return
+		}
+		var topicIds []int
+		for _, task := range topicTasks {
+			topicIds = append(topicIds, task.TopicId)
+		}
+
+		var result []struct {
+			Type  int
+			Count int
+		}
+		db.Model(&model.Note{}).
+			Select("type, count(*) as count").
+			Where("qq_number = ? and type in ? and is_delete = ?", qqNumber, topicIds, NoDeleted).
+			Group("type").
+			Scan(&result)
+		countMap := make(map[int]int)
+		for _, r := range result {
+			countMap[r.Type] = r.Count
+		}
+
+		fmt.Printf("话题数量统计result=%v， topicTasks=%v, countMap=%v\n", result, topicTasks, countMap)
+
+		var segList []message.MessageSegment
+		idMap := map[int]uint{}
+		for i, topic := range topicTasks {
+			strs := []string{
+				fmt.Sprintf("%d. ", i+1) + topic.TopicName,
+				"内容数量：" + strconv.Itoa(countMap[topic.TopicId]),
+				"提醒频率：" + topic.RemindRule,
+				"下次提醒：" + topic.NextRemindTime.Format("2006-01-02 15:04:05"),
+				"是否自动提醒：" + map[int8]string{0: "否", 1: "是"}[topic.Status],
+			}
+			segList = append(segList, message.Text(strings.Join(strs, "\n")))
+			idMap[i+1] = topic.ID // 话题列表id映射关系
+		}
+		// 保存该用户记事列表id映射关系
+		userInfos[qqNumber] = userInfo{cmdType: funcTypeTopic, idMap: idMap}
+
+		ctx.SendChain(segList...)
 	})
 
 	// 删除记事
