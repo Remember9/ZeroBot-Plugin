@@ -120,13 +120,22 @@ func init() {
 			return
 		}
 
-		if nextRemind.Time.Before(time.Now().Add(time.Minute)) {
+		if nextRemind.Time.Before(time.Now()) || (nextRemind.Time.Sub(time.Now()) < 1*time.Minute && nextRemind.Time.Minute() <= time.Now().Minute()) {
 			logrus.Info("解析失败：计划提醒时间必须在一分钟之后")
 			ctx.SendChain(message.Text("计划提醒时间必须在一分钟之后"))
 			return
 		}
-		qqNumber := strconv.FormatInt(ctx.Event.Sender.ID, 10)
+		var qqNumber string
 		groupNumber := strconv.FormatInt(ctx.Event.GroupID, 10)
+		re := regexp.MustCompile(`\[CQ:at,qq=(\d+)`)
+		match := re.FindStringSubmatch(ctx.Event.RawMessage)
+		if len(match) != 0 {
+			qqNumber = match[1]
+			nextRemind.RemindQQ = qqNumber
+			fmt.Println("检测到at=" + match[1])
+		} else {
+			qqNumber = strconv.FormatInt(ctx.Event.Sender.ID, 10)
+		}
 
 		data := map[string]interface{}{
 			"next_remind_time": nextRemind.Time.Format("2006-01-02 15:04:05"),
@@ -207,17 +216,18 @@ func init() {
 	})
 
 	// 给话题里添加内容
-	topicNames := []string{"tjht", "添加话题"}
-	engine.OnPrefixGroup(topicNames).SetBlock(false).Handle(func(ctx *zero.Ctx) {
-		qqNumber := ctx.Event.Sender.ID
-		args := ctx.State["args"].(string)
-		fields := strings.Fields(args)
+	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		// 判断是否为两个参数
+		fields := strings.SplitN(strings.TrimSpace(ctx.Event.RawMessage), " ", 2)
 		if len(fields) < 2 {
-			logrus.Info("解析失败：参数必须为话题名和内容2个值")
-			ctx.SendChain(message.Text("参数必须为话题名和提醒频率2个值"))
 			return
 		}
 		topicName := fields[0]
+		topicId, ok := topicNameMap[topicName]
+		if !ok {
+			return
+		}
+		qqNumber := ctx.Event.Sender.ID
 		for _, elem := range ctx.Event.Message {
 			switch elem.Type {
 			case "image":
@@ -235,7 +245,7 @@ func init() {
 		finalCQCode := ctx.Event.Message.CQCode()
 
 		// 去除命令前缀
-		for _, prefix := range topicNames {
+		for prefix := range topicNameMap {
 			if strings.HasPrefix(finalCQCode, prefix) {
 				finalCQCode = strings.TrimPrefix(finalCQCode, prefix)
 				finalCQCode = strings.TrimLeft(finalCQCode, " ")
@@ -249,7 +259,7 @@ func init() {
 
 		note := &model.Note{
 			QQNumber: strconv.FormatInt(qqNumber, 10),
-			Type:     topicNameMap[topicName],
+			Type:     topicId,
 			IsReview: 0,
 			Content:  finalCQCode,
 			CDate:    time.Now(),
@@ -310,19 +320,17 @@ func init() {
 	})
 
 	// 查看单个话题内容
-	ckhtPrefix := []string{"ckht", "查看话题"}
-	engine.OnPrefixGroup(ckhtPrefix).SetBlock(false).Handle(func(ctx *zero.Ctx) {
-		args := ctx.State["args"].(string)
-		topicId, ok := topicNameMap[strings.TrimSpace(args)]
+	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		// 判断ctx.Event.RawMessage trim后是否为topicNameMap中的一个key'
+		trimmedName := strings.TrimSpace(ctx.Event.RawMessage)
+		topicId, ok := topicNameMap[trimmedName]
 		if !ok {
-			logrus.Errorf("话题不存在")
-			ctx.SendChain(message.Text("话题不存在"))
 			return
 		}
-		params := removePrefix(ctx.Event.RawMessage, ckhtPrefix)
+
 		qqNumber := ctx.Event.Sender.ID
 		notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), topicId, "", -1)
-		logrus.Infof("params=%v, notes=%v", params, notes)
+		logrus.Infof("notes=%v", notes)
 		if err != nil {
 			logrus.Errorf("查询笔记失败：%v", err)
 		}
@@ -345,7 +353,7 @@ func init() {
 
 		// 把多个单独消息拼接成一条长消息
 		var endMsg []message.MessageSegment
-		endMsg = append(endMsg, message.Text(fmt.Sprintf("话题名：%s\n", strings.TrimSpace(args))))
+		endMsg = append(endMsg, message.Text(fmt.Sprintf("话题名：%s\n", trimmedName)))
 		for i, msg := range mList {
 			// 将CQ码中的图片URL替换为本地路径
 			msg := replaceImageUrlWithLocalPath(msg, qqNumber)
@@ -382,7 +390,8 @@ func init() {
 		}
 
 		fmt.Printf("nextRemind.Time=%v", nextRemind.Time)
-		if nextRemind.Time.Before(time.Now().Add(time.Minute)) {
+		//if nextRemind.Time.Sub(time.Now()) < 1*time.Minute && (nextRemind.Time.Before(time.Now()) || nextRemind.Time.Minute() <= time.Now().Minute()) {
+		if nextRemind.Time.Before(time.Now()) || (nextRemind.Time.Sub(time.Now()) < 1*time.Minute && nextRemind.Time.Minute() <= time.Now().Minute()) {
 			logrus.Info("解析失败：计划提醒时间必须在一分钟之后")
 			ctx.SendChain(message.Text("计划提醒时间必须在一分钟之后"))
 			return
@@ -474,7 +483,7 @@ func init() {
 		ctx.SendChain(endMsg...)
 	})
 
-	// 查看定时任务
+	// 查看全部话题
 	engine.OnPrefixGroup([]string{"qbht", "全部话题"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
 		qqNumber := ctx.Event.Sender.ID
 		var topicTasks []model.Remind
