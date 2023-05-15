@@ -68,6 +68,10 @@ func buildTopicMap() {
 	var reminds []model.Remind
 	db.Model(&model.Remind{}).Select("DISTINCT topic_id, topic_name").Find(&reminds)
 	for _, remind := range reminds {
+		// 排除无意义数据
+		if remind.TopicName == "" {
+			continue
+		}
 		// 建立topic_id和topic_name的映射关系
 		topicIdMap[remind.TopicId] = remind.TopicName
 		// 建立topic_name和topic_id的映射关系
@@ -111,7 +115,7 @@ func init() {
 
 	// 添加新的定时提醒
 	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
-		if !strings.Contains(ctx.Event.RawMessage, "提醒") {
+		if !strings.Contains(ctx.Event.RawMessage, "提醒") && !strings.Contains(ctx.Event.RawMessage, "叫") {
 			return
 		}
 
@@ -126,16 +130,12 @@ func init() {
 			return
 		}
 		var qqNumber string
-		groupNumber := strconv.FormatInt(ctx.Event.GroupID, 10)
-		re := regexp.MustCompile(`\[CQ:at,qq=(\d+)`)
-		match := re.FindStringSubmatch(ctx.Event.RawMessage)
-		if len(match) != 0 {
-			qqNumber = match[1]
-			nextRemind.RemindQQ = qqNumber
-			fmt.Println("检测到at=" + match[1])
+		if nextRemind.RemindQQ != "" {
+			qqNumber = nextRemind.RemindQQ
 		} else {
 			qqNumber = strconv.FormatInt(ctx.Event.Sender.ID, 10)
 		}
+		groupNumber := strconv.FormatInt(ctx.Event.GroupID, 10)
 
 		data := map[string]interface{}{
 			"next_remind_time": nextRemind.Time.Format("2006-01-02 15:04:05"),
@@ -321,6 +321,7 @@ func init() {
 
 	// 查看单个话题内容
 	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		logrus.Infoln("topicNameMap=%v", topicNameMap)
 		// 判断ctx.Event.RawMessage trim后是否为topicNameMap中的一个key'
 		trimmedName := strings.TrimSpace(ctx.Event.RawMessage)
 		topicId, ok := topicNameMap[trimmedName]
@@ -484,7 +485,7 @@ func init() {
 	})
 
 	// 查看全部话题
-	engine.OnPrefixGroup([]string{"qbht", "全部话题"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+	engine.OnPrefixGroup([]string{"qbht", "全部话题", "ckht", "查看话题"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
 		qqNumber := ctx.Event.Sender.ID
 		var topicTasks []model.Remind
 		db := GetDB()
@@ -521,7 +522,7 @@ func init() {
 				"内容数量：" + strconv.Itoa(countMap[topic.TopicId]),
 				"提醒频率：" + topic.RemindRule,
 				"下次提醒：" + topic.NextRemindTime.Format("2006-01-02 15:04:05"),
-				"是否自动提醒：" + map[int8]string{0: "否", 1: "是"}[topic.Status],
+				"是否开启提醒：" + map[int8]string{0: "否", 1: "是"}[topic.Status],
 			}
 			segList = append(segList, message.Text(strings.Join(strs, "\n")))
 			idMap[i+1] = topic.ID // 话题列表id映射关系

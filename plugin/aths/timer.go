@@ -92,14 +92,11 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 		logrus.Errorf("[CheckReminderEvents] Failed to get reminder events: %v", err)
 		return
 	}
-	fmt.Printf("@@@@@@@@@@@@@@@@@@@@@reminds=%v\n", reminds)
+	logrus.Infof("全部待提醒内容=%v\n", reminds)
 	update := make([]map[string]interface{}, 0)
 	for _, row := range reminds {
 		qqNumber, _ := strconv.Atoi(row["qq_number"].(string))
 		groupNumber, _ := strconv.Atoi(row["group_number"].(string))
-		if qqNumber != 164212720 {
-			continue
-		}
 		// 如果是话题提醒
 		if row["type"].(int8) == TaskTypeTopic {
 			db := GetDB()
@@ -137,8 +134,8 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 				sendContent = "到点了，到点了！(" + row["remind_rule"].(string) + ")"
 			}
 			// 私发提醒
-			println("@@@@@@@@@@@@@@@@@@@@@   groupNumber", groupNumber)
-			println("@@@@@@@@@@@@@@@@@@@@@   qqNumber", qqNumber)
+			logrus.Info("remind groupNumber=", groupNumber)
+			logrus.Info(", qqNumber", qqNumber)
 			ctx.SendPrivateMessage(int64(qqNumber), message.Text(sendContent))
 			// 如果是在群里建立的定时提醒，还会在群里at并提醒
 			if row["group_number"] != nil && row["group_number"].(string) != "0" {
@@ -206,11 +203,13 @@ func remindResolve(remindMsg string) (RemindData, error) {
 
 	// 提醒别人
 	remindQq := ""
-	atIndex := strings.Index(remindMsg, "@")
-	if atIndex != -1 {
-		remindAt := remindMsg[atIndex:]
-		remindQq = strings.Split(remindAt, " ")[0]
-		remindMsg = strings.ReplaceAll(remindMsg, remindAt, "")
+	re := regexp.MustCompile(`\[CQ:at,qq=(\d+)]`)
+	match := re.FindStringSubmatch(remindMsg)
+	if len(match) != 0 {
+		remindQq = match[1]
+		remindMsg = re.ReplaceAllString(remindMsg, "")
+		logrus.Infoln("检测到at:" + match[1])
+		logrus.Infoln("删除at后remindMsg=" + remindMsg)
 	}
 
 	// 解析待办命令
@@ -218,7 +217,7 @@ func remindResolve(remindMsg string) (RemindData, error) {
 	if remindQq != "" {
 		fmt.Printf("regexp.MustCompile(`(叫|提醒(他|她|它|ta)?)`).Split(remindMsg, 2)=%v\n", regexp.MustCompile(`(叫|提醒)我`).Split(remindMsg, 2))
 		parts := regexp.MustCompile(`(叫|提醒(他|她|它|ta)?)`).Split(remindMsg, 2)
-		todoRule = parts[0]
+		todoRule = strings.TrimSpace(parts[0])
 		if len(parts) > 1 {
 			todoThing = parts[1]
 		}
