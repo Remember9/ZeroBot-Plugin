@@ -525,6 +525,7 @@ func init() {
 				"提醒频率：" + topic.RemindRule,
 				"下次提醒：" + topic.NextRemindTime.Format("2006-01-02 15:04:05"),
 				"是否开启提醒：" + map[int8]string{0: "否", 1: "是"}[topic.Status],
+				"\n",
 			}
 			segList = append(segList, message.Text(strings.Join(strs, "\n")))
 			idMap[i+1] = topic.ID // 话题列表id映射关系
