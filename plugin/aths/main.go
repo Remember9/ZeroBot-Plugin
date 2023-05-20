@@ -244,14 +244,6 @@ func init() {
 		// 修改后的消息重新生成CQ码
 		finalCQCode := ctx.Event.Message.CQCode()
 
-		// 去除命令前缀
-		for prefix := range topicNameMap {
-			if strings.HasPrefix(finalCQCode, prefix) {
-				finalCQCode = strings.TrimPrefix(finalCQCode, prefix)
-				finalCQCode = strings.TrimLeft(finalCQCode, " ")
-				break
-			}
-		}
 		// 去除话题名
 		finalCQCode = strings.TrimPrefix(finalCQCode, topicName)
 		finalCQCode = strings.TrimLeft(finalCQCode, " ")
@@ -443,6 +435,11 @@ func init() {
 			endMsg = append(endMsg, message.Text(i+1, ". ")) // 给每条笔记添加序号
 			endMsg = append(endMsg, msg...)
 		}
+		if len(endMsg) == 0 {
+			logrus.Info("记事数量为0")
+			ctx.SendChain(message.Text("无结果"))
+			return
+		}
 		ctx.SendChain(endMsg...)
 	})
 
@@ -480,6 +477,11 @@ func init() {
 			}
 			endMsg = append(endMsg, message.Text(i+1, ". ")) // 给每条笔记添加序号
 			endMsg = append(endMsg, msg...)
+		}
+		if len(endMsg) == 0 {
+			logrus.Info("无提醒数据")
+			ctx.SendChain(message.Text("无提醒数据"))
+			return
 		}
 		ctx.SendChain(endMsg...)
 	})
@@ -529,7 +531,11 @@ func init() {
 		}
 		// 保存该用户记事列表id映射关系
 		userInfos[qqNumber] = userInfo{cmdType: funcTypeTopic, idMap: idMap}
-
+		if len(segList) == 0 {
+			logrus.Info("无话题")
+			ctx.SendChain(message.Text("无话题"))
+			return
+		}
 		ctx.SendChain(segList...)
 	})
 
