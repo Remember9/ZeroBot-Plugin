@@ -299,7 +299,7 @@ func init() {
 		topicIdStart := 100
 		db := GetDB()
 		var err error
-		if err = db.Model(&model.Remind{}).Select("MAX(topic_id)").Scan(&maxTopicId).Error; err != nil {
+		if err = db.Model(&model.Remind{}).Select("COALESCE(MAX(topic_id), 0)").Scan(&maxTopicId).Error; err != nil {
 			logrus.Errorf("查询最大topic_id失败, err=%s", err.Error())
 			ctx.SendChain(message.Text("查询最大topic_id失败"))
 			return
