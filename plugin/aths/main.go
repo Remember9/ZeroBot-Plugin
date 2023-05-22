@@ -283,14 +283,17 @@ func init() {
 	// 新建话题
 	engine.OnPrefixGroup([]string{"xjht", "新建话题", "cjht", "创建话题"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
 		args := ctx.State["args"].(string)
-		//_, ok := topicNameMap[strings.TrimSpace(args)]
-		// 不允许存在相同名称的话题
-		//if ok {
-		//	logrus.Errorf(fmt.Sprintf("话题%s已存在，不允许存在相同名称的话题", args))
-		//	ctx.SendChain(message.Text(fmt.Sprintf("话题%s已存在，不允许存在相同名称的话题", args)))
-		//	return
-		//}
 		qqNumber := ctx.Event.Sender.ID
+		if args == "" {
+			ctx.SendChain(message.Text("请指定话题名，例：新建话题名 算命"))
+			return
+		}
+		_, exist := topicMap[qqNumber].name2Id[args]
+		if exist {
+			ctx.SendChain(message.Text(fmt.Sprintf("话题%s已存在，不允许存在相同名称的话题", args)))
+			return
+		}
+
 		GroupID := ctx.Event.GroupID
 		var maxTopicId int
 		topicIdStart := 100
