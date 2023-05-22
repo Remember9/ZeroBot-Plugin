@@ -58,27 +58,41 @@ type userInfo struct {
 
 var userInfos map[int64]userInfo
 
-var topicIdMap map[int]string
-var topicNameMap map[string]int
+//var topicIdMap map[int]string
+//var topicNameMap map[string]int
+
+type topicmap struct {
+	id2Name map[int][]string
+	name2Id map[string]int
+}
+
+var topicMap map[int64]topicmap
 
 func buildTopicMap() {
-	topicIdMap = make(map[int]string)
-	topicNameMap = make(map[string]int)
+	topicIdMap := make(map[int][]string)
+	topicNameMap := make(map[string]int)
+	topicMap = make(map[int64]topicmap)
 	db := GetDB()
 	var reminds []model.Remind
-	db.Model(&model.Remind{}).Select("DISTINCT topic_id, topic_name").Find(&reminds)
+	db.Model(&model.Remind{}).Select("DISTINCT topic_id, topic_name, qq_number").Find(&reminds)
 	for _, remind := range reminds {
 		// 排除无意义数据
-		if remind.TopicName == "" {
+		if remind.TopicName == "" || remind.QQNumber == "" {
 			continue
 		}
-		// 建立topic_id和topic_name的映射关系
-		topicIdMap[remind.TopicId] = remind.TopicName
 		// 建立topic_name和topic_id的映射关系
 		topicNames := strings.Split(remind.TopicName, ",")
 		for _, topicName := range topicNames {
 			topicNameMap[strings.TrimSpace(topicName)] = remind.TopicId
 		}
+		// 建立topic_id和topic_name的映射关系
+		topicIdMap[remind.TopicId] = topicNames
+		// convert remind.QQNumber from string to int64
+		qqNumber, err := strconv.ParseInt(remind.QQNumber, 10, 64)
+		if err != nil {
+			continue
+		}
+		topicMap[qqNumber] = topicmap{id2Name: topicIdMap, name2Id: topicNameMap}
 	}
 }
 
@@ -222,12 +236,12 @@ func init() {
 		if len(fields) < 2 {
 			return
 		}
+		qqNumber := ctx.Event.Sender.ID
 		topicName := fields[0]
-		topicId, ok := topicNameMap[topicName]
+		topicId, ok := topicMap[qqNumber].name2Id[topicName]
 		if !ok {
 			return
 		}
-		qqNumber := ctx.Event.Sender.ID
 		for _, elem := range ctx.Event.Message {
 			switch elem.Type {
 			case "image":
@@ -311,17 +325,75 @@ func init() {
 		ctx.SendChain(message.Text(fmt.Sprintf("新建话题：%s成功", args)))
 	})
 
+	// 为话题添加别名
+	engine.OnPrefixGroup([]string{"htbm", "话题别名", "bm", "别名"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		args := ctx.State["args"].(string)
+		qqNumber := ctx.Event.Sender.ID
+		// split args to 2 parts by space
+		parts := strings.SplitN(args, " ", 2)
+		if len(parts) < 2 {
+			return
+		}
+		oldTopicName := strings.TrimSpace(parts[0])
+		topicId, ok := topicMap[qqNumber].name2Id[oldTopicName]
+		if !ok {
+			ctx.SendChain(message.Text(fmt.Sprintf("话题%s已存在，不允许存在相同名称的话题", oldTopicName)))
+			return
+		}
+		newTopicName := strings.TrimSpace(parts[1])
+		note := &model.Remind{
+			QQNumber:    strconv.FormatInt(qqNumber, 10),
+			Type:        TaskTypeTopic,
+			GroupNumber: strconv.FormatInt(ctx.Event.GroupID, 10),
+			Status:      TaskStatusOff, // 刚创建时默认不加入自动提醒
+			CDate:       time.Now(),
+			TopicId:     topicId,
+			TopicName:   args,
+		}
+		GroupID := ctx.Event.GroupID
+		var maxTopicId int
+		topicIdStart := 100
+		db := GetDB()
+		var err error
+		if err = db.Model(&model.Remind{}).Select("MAX(topic_id)").Scan(&maxTopicId).Error; err != nil {
+			logrus.Errorf("查询最大topic_id失败, err=%s", err.Error())
+			ctx.SendChain(message.Text("查询最大topic_id失败"))
+			return
+		}
+		if maxTopicId == 0 {
+			maxTopicId = topicIdStart
+		}
+		newTopicId := maxTopicId + 1 // 新话题ID
+		note := &model.Remind{
+			QQNumber:    strconv.FormatInt(qqNumber, 10),
+			Type:        TaskTypeTopic,
+			GroupNumber: strconv.FormatInt(GroupID, 10),
+			Status:      TaskStatusOff, // 刚创建时默认不加入自动提醒
+			CDate:       time.Now(),
+			TopicId:     newTopicId,
+			TopicName:   args,
+		}
+		if err = db.Create(note).Error; err != nil {
+			logrus.Errorf("话题插入失败, note=%v, err=%s", *note, err.Error())
+			ctx.SendChain(message.Text("话题插入失败"))
+			return
+		}
+		// 构建话题id与name的映射
+		buildTopicMap()
+
+		ctx.SendChain(message.Text(fmt.Sprintf("新建话题：%s成功", args)))
+	})
+
 	// 查看单个话题内容
 	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
-		logrus.Infoln("topicNameMap=%v", topicNameMap)
 		// 判断ctx.Event.RawMessage trim后是否为topicNameMap中的一个key'
 		trimmedName := strings.TrimSpace(ctx.Event.RawMessage)
-		topicId, ok := topicNameMap[trimmedName]
+		qqNumber := ctx.Event.Sender.ID
+		topicId, ok := topicMap[qqNumber].name2Id[trimmedName]
 		if !ok {
 			return
 		}
 
-		qqNumber := ctx.Event.Sender.ID
 		notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), topicId, "", -1)
 		logrus.Infof("notes=%v", notes)
 		if err != nil {
@@ -369,7 +441,10 @@ func init() {
 			return
 		}
 		topicName, frequency := fields[0], fields[1]
-		topicId, ok := topicNameMap[topicName]
+		topicId, ok := topicMap[ctx.Event.Sender.ID].name2Id[topicName]
+		if !ok {
+			return
+		}
 		if !ok {
 			logrus.Errorf("话题不存在")
 			ctx.SendChain(message.Text("话题不存在"))
