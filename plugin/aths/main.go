@@ -290,7 +290,7 @@ func init() {
 		}
 		_, exist := topicMap[qqNumber].name2Id[args]
 		if exist {
-			ctx.SendChain(message.Text(fmt.Sprintf("话题%s已存在，不允许存在相同名称的话题", args)))
+			ctx.SendChain(message.Text(fmt.Sprintf("话题“%s“已存在，不允许存在相同名称的话题", args)))
 			return
 		}
 
@@ -338,9 +338,9 @@ func init() {
 			return
 		}
 		oldTopicName := strings.TrimSpace(parts[0])
-		topicId, ok := topicMap[qqNumber].name2Id[oldTopicName]
-		if !ok {
-			ctx.SendChain(message.Text(fmt.Sprintf("话题%s已存在，不允许存在相同名称的话题", oldTopicName)))
+		topicId, exist := topicMap[qqNumber].name2Id[oldTopicName]
+		if exist {
+			ctx.SendChain(message.Text(fmt.Sprintf("话题”%s”已存在，请起一个其他别名", oldTopicName)))
 			return
 		}
 		db := GetDB()
@@ -356,7 +356,7 @@ func init() {
 		// 构建话题id与name的映射
 		buildTopicMap()
 		// 该topic现有全部别名
-		ctx.SendChain(message.Text(fmt.Sprintf("成功给话题%s添加别名：%s, 等价别名有：%s", oldTopicName, newTopicName, aliaNames)))
+		ctx.SendChain(message.Text(fmt.Sprintf("成功给话题“%s“添加别名：%s, 等价别名有：%s", oldTopicName, newTopicName, aliaNames)))
 	})
 
 	// 查看单个话题内容
