@@ -326,7 +326,7 @@ func init() {
 	})
 
 	// 为话题添加别名
-	engine.OnPrefixGroup([]string{"htbm", "话题别名", "bm", "别名"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
+	engine.OnPrefixGroup([]string{"htbm", "话题别名", "bm", "别名", "tjbm", "添加别名"}).SetBlock(false).Handle(func(ctx *zero.Ctx) {
 		args := ctx.State["args"].(string)
 		qqNumber := ctx.Event.Sender.ID
 		// split args to 2 parts by space
@@ -340,48 +340,20 @@ func init() {
 			ctx.SendChain(message.Text(fmt.Sprintf("话题%s已存在，不允许存在相同名称的话题", oldTopicName)))
 			return
 		}
-		newTopicName := strings.TrimSpace(parts[1])
-		note := &model.Remind{
-			QQNumber:    strconv.FormatInt(qqNumber, 10),
-			Type:        TaskTypeTopic,
-			GroupNumber: strconv.FormatInt(ctx.Event.GroupID, 10),
-			Status:      TaskStatusOff, // 刚创建时默认不加入自动提醒
-			CDate:       time.Now(),
-			TopicId:     topicId,
-			TopicName:   args,
-		}
-		GroupID := ctx.Event.GroupID
-		var maxTopicId int
-		topicIdStart := 100
 		db := GetDB()
-		var err error
-		if err = db.Model(&model.Remind{}).Select("MAX(topic_id)").Scan(&maxTopicId).Error; err != nil {
-			logrus.Errorf("查询最大topic_id失败, err=%s", err.Error())
-			ctx.SendChain(message.Text("查询最大topic_id失败"))
-			return
-		}
-		if maxTopicId == 0 {
-			maxTopicId = topicIdStart
-		}
-		newTopicId := maxTopicId + 1 // 新话题ID
-		note := &model.Remind{
-			QQNumber:    strconv.FormatInt(qqNumber, 10),
-			Type:        TaskTypeTopic,
-			GroupNumber: strconv.FormatInt(GroupID, 10),
-			Status:      TaskStatusOff, // 刚创建时默认不加入自动提醒
-			CDate:       time.Now(),
-			TopicId:     newTopicId,
-			TopicName:   args,
-		}
-		if err = db.Create(note).Error; err != nil {
-			logrus.Errorf("话题插入失败, note=%v, err=%s", *note, err.Error())
-			ctx.SendChain(message.Text("话题插入失败"))
+		newTopicName := strings.TrimSpace(parts[1])
+		// 新别名添加到该话题别名列表
+		topicMap[qqNumber].id2Name[topicId] = append(topicMap[qqNumber].id2Name[topicId], newTopicName)
+		aliaNames := strings.Join(topicMap[qqNumber].id2Name[topicId], ",")
+		if err := db.Where("topic_id = ?", topicId).Updates(model.Remind{TopicName: aliaNames}).Error; err != nil {
+			logrus.Errorf("话题别名%s新增失败, err=%s", newTopicName, err.Error())
+			ctx.SendChain(message.Text("话题别名%s新增失败, err=%s", newTopicName, err.Error()))
 			return
 		}
 		// 构建话题id与name的映射
 		buildTopicMap()
-
-		ctx.SendChain(message.Text(fmt.Sprintf("新建话题：%s成功", args)))
+		// 该topic现有全部别名
+		ctx.SendChain(message.Text(fmt.Sprintf("成功给话题%s添加别名：%s, 等价别名有：%s", oldTopicName, newTopicName, aliaNames)))
 	})
 
 	// 查看单个话题内容
