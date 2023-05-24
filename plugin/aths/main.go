@@ -454,9 +454,31 @@ func init() {
 
 	// 查看记事
 	ckjsPrefix := []string{"ckjs", "查看记事"}
-	engine.OnPrefixGroup(ckjsPrefix).SetBlock(false).Handle(func(ctx *zero.Ctx) {
-		params := removePrefix(ctx.Event.RawMessage, ckjsPrefix)
+	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
+		var whichCommand string
+		rawMsg := ctx.MessageString()
+		for _, prefix := range ckjsPrefix {
+			if strings.Contains(rawMsg, prefix) {
+				whichCommand = prefix
+				break
+			}
+		}
+		if whichCommand == "" {
+			return
+		}
+
+		re := regexp.MustCompile(`\[CQ:at,qq=(\d+)]`)
+		match := re.FindStringSubmatch(rawMsg)
 		qqNumber := ctx.Event.Sender.ID
+		if len(match) != 0 {
+			// 如果查看记事时艾特了别人，则查看这个人的记事内容
+			qqNumber, _ = strconv.ParseInt(match[1], 10, 64)
+			rawMsg = re.ReplaceAllString(rawMsg, "")
+			rawMsg = strings.TrimSpace(rawMsg)
+			logrus.Infoln("检测到at:" + match[1])
+			logrus.Infoln("删除at后Msg=" + rawMsg)
+		}
+		params := removePrefix(rawMsg, ckjsPrefix)
 		notes, err := queryNotes(strconv.FormatInt(qqNumber, 10), funcTypeJishi, params, -1)
 		logrus.Infof("params=%v, notes=%v", params, notes)
 		if err != nil {
