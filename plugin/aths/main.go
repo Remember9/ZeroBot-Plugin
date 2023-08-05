@@ -2,6 +2,7 @@ package aths
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/FloatTech/ZeroBot-Plugin/plugin/aths/model"
 	ctrl "github.com/FloatTech/zbpctrl"
@@ -68,6 +69,47 @@ type topicmap struct {
 
 var topicMap map[int64]topicmap
 
+func StartServer() {
+	type notify struct {
+		Receiver     int64  `json:"receiver"`
+		ReceiverType string `json:"receiver_type"`
+		Message      string `json:"message"`
+	}
+	http.HandleFunc("/checkin", func(w http.ResponseWriter, r *http.Request) {
+		// Set the content type for the response to JSON
+		w.Header().Set("Content-Type", "application/json")
+
+		// Parse the JSON request body
+		var requestData notify
+		if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
+			http.Error(w, "Failed to parse JSON request", http.StatusBadRequest)
+			return
+		}
+		logrus.Printf("requestData=%+v", requestData)
+		// 获取一个在线能用的bot
+		zero.RangeBot(func(id int64, c *zero.Ctx) bool {
+			switch requestData.ReceiverType {
+			case "group":
+				c.SendGroupMessage(requestData.Receiver, message.Text(requestData.Message))
+			case "private":
+				c.SendPrivateMessage(requestData.Receiver, message.Text(requestData.Message))
+			}
+			return false
+		})
+
+		// Write the response back to the client
+		_, _ = w.Write([]byte(`{code: 0, message: "success"}`))
+	})
+
+	// 启动HTTP服务器并监听端口
+	port := "1642"
+	fmt.Printf("Server listening on port %s...\n", port)
+	err := http.ListenAndServe(":"+port, nil)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func buildTopicMap() {
 	topicIdMap := make(map[int][]string)
 	topicNameMap := make(map[string]int)
@@ -125,6 +167,10 @@ func init() {
 		for range ticker.C {
 			CheckReminderEvents(ctx)
 		}
+	}()
+
+	go func() {
+		StartServer()
 	}()
 
 	// 添加新的定时提醒
