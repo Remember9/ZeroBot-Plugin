@@ -104,7 +104,7 @@ func StartServer() {
 	// 启动HTTP服务器并监听端口
 	port := "1642"
 	fmt.Printf("Server listening on port %s...\n", port)
-	err := http.ListenAndServe(":"+port, nil)
+	err := http.ListenAndServe("0.0.0.0:"+port, nil)
 	if err != nil {
 		panic(err)
 	}
