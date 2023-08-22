@@ -98,7 +98,7 @@ func StartServer() {
 		})
 
 		// Write the response back to the client
-		_, _ = w.Write([]byte(`{code: 0, message: "success"}`))
+		_, _ = w.Write([]byte(`{"code": 0, "message": "success"}`))
 	})
 
 	// 启动HTTP服务器并监听端口
