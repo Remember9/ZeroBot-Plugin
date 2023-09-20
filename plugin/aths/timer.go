@@ -42,7 +42,18 @@ var remindRules = map[int]*regexp.Regexp{
 	TypePerMinute:                      regexp.MustCompile(`^每(\d+)分(?:钟)?$`),
 	TypePerHour:                        regexp.MustCompile(`^每(\d+)小时$`),
 	TypePerDay:                         regexp.MustCompile(`^每天(\d+)点(\d+)?(?:分)?$`),
-	TypePerWeek:                        regexp.MustCompile(`^每周([1234567])的(\d+)点(\d+)?(?:分)?$`),
+	TypePerWeek:                        regexp.MustCompile(`^每周([1234567一二三四五六七日])的(\d+)点(\d+)?(?:分)?$`),
+}
+
+var weekCnMapping = map[string]int{
+	"一": 1,
+	"二": 2,
+	"三": 3,
+	"四": 4,
+	"五": 5,
+	"六": 6,
+	"日": 7,
+	"七": 7,
 }
 
 // var remindRules = map[int]*regexp.Regexp{
@@ -281,7 +292,13 @@ func remindResolve(remindMsg string) (RemindData, error) {
 		}
 		isRepeat = true
 	case TypePerWeek:
-		week, _ := strconv.Atoi(remindParams[0])
+		var week int
+		if weekNum, ok := weekCnMapping[remindParams[0]]; ok {
+			week = weekNum
+		} else {
+			week, _ = strconv.Atoi(remindParams[0])
+		}
+
 		hour, _ := strconv.Atoi(remindParams[1])
 		minute, _ := strconv.Atoi(remindParams[2])
 		// 获取当前时间
