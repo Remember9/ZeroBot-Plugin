@@ -48,9 +48,9 @@ const (
 	Deleted   = 1
 )
 
-//var folderIdDict = map[int64]string{
+// var folderIdDict = map[int64]string{
 //	164212720: "/131a5840-3c2f-4fe7-88bc-42029bd2d931",
-//}
+// }
 
 type userInfo struct {
 	cmdType int
@@ -59,8 +59,8 @@ type userInfo struct {
 
 var userInfos map[int64]userInfo
 
-//var topicIdMap map[int]string
-//var topicNameMap map[string]int
+// var topicIdMap map[int]string
+// var topicNameMap map[string]int
 
 type topicmap struct {
 	id2Name map[int][]string
@@ -396,7 +396,7 @@ func init() {
 		aliaNames := strings.Join(topicMap[qqNumber].id2Name[topicId], ",")
 		if err := db.Where("topic_id = ?", topicId).Updates(model.Remind{TopicName: aliaNames}).Error; err != nil {
 			logrus.Errorf("话题别名%s新增失败, err=%s", newTopicName, err.Error())
-			ctx.SendChain(message.Text("话题别名%s新增失败, err=%s", newTopicName, err.Error()))
+			ctx.SendChain(message.Text(fmt.Sprintf("话题别名%s新增失败, err=%s", newTopicName, err.Error())))
 			return
 		}
 		// 构建话题id与name的映射
@@ -479,7 +479,7 @@ func init() {
 		}
 
 		fmt.Printf("nextRemind.Time=%v", nextRemind.Time)
-		//if nextRemind.Time.Sub(time.Now()) < 1*time.Minute && (nextRemind.Time.Before(time.Now()) || nextRemind.Time.Minute() <= time.Now().Minute()) {
+		// if nextRemind.Time.Sub(time.Now()) < 1*time.Minute && (nextRemind.Time.Before(time.Now()) || nextRemind.Time.Minute() <= time.Now().Minute()) {
 		if nextRemind.Time.Before(time.Now()) || (nextRemind.Time.Sub(time.Now()) < 1*time.Minute && nextRemind.Time.Minute() <= time.Now().Minute()) {
 			logrus.Info("解析失败：计划提醒时间必须在一分钟之后")
 			ctx.SendChain(message.Text("计划提醒时间必须在一分钟之后"))
@@ -839,11 +839,11 @@ func downloadImage(ctx *zero.Ctx, url string, senderId int64, maxRetry int) (str
 	fmt.Printf("Image saved as %s\n", filename)
 
 	// 上传到群文件
-	//ctx.UploadGroupFile(718853660, filePath, filename, "")
-	//files := ctx.GetThisGroupRootFiles(0)
-	//fmt.Printf("files=%v", files)
-	//upResp := ctx.UploadThisGroupFile(filePath, filename, "/131a5840-3c2f-4fe7-88bc-42029bd2d931")
-	//fmt.Printf("上传群文件结果：%v", upResp)
+	// ctx.UploadGroupFile(718853660, filePath, filename, "")
+	// files := ctx.GetThisGroupRootFiles(0)
+	// fmt.Printf("files=%v", files)
+	// upResp := ctx.UploadThisGroupFile(filePath, filename, "/131a5840-3c2f-4fe7-88bc-42029bd2d931")
+	// fmt.Printf("上传群文件结果：%v", upResp)
 
 	return filename, nil
 }
@@ -851,7 +851,7 @@ func downloadImage(ctx *zero.Ctx, url string, senderId int64, maxRetry int) (str
 func queryNotes(userId string, noteType int, keyword string, limit int) ([]model.Note, error) {
 	db := GetDB()
 	var notes []model.Note
-	//queryDb := db.Select("id, content, note_url").Where(model.Note{QQNumber: userId, Type: noteType, IsDelete: 0}).Order("cdate desc")
+	// queryDb := db.Select("id, content, note_url").Where(model.Note{QQNumber: userId, Type: noteType, IsDelete: 0}).Order("cdate desc")
 	queryDb := db.Where(model.Note{QQNumber: userId, Type: noteType, IsDelete: 0}, "qq_number", "type", "is_delete").Order("cdate desc")
 	if keyword != "" {
 		queryDb.Where("content like ?", "%"+keyword+"%")
@@ -907,7 +907,7 @@ func getFileURLbyFileName(ctx *zero.Ctx, fileName string) (fileSearchName, fileU
 func getGroupFileList(ctx *zero.Ctx) (fileList []string) {
 	filesOfGroup := ctx.GetThisGroupRootFiles(ctx.Event.GroupID)
 	files := filesOfGroup.Get("files").Array()
-	//folders := filesOfGroup.Get("folders").Array()
+	// folders := filesOfGroup.Get("folders").Array()
 	// 遍历当前目录的文件名
 
 	var fileInfo string
@@ -924,7 +924,7 @@ func getGroupFileList(ctx *zero.Ctx) (fileList []string) {
 	}
 	return
 	// 遍历子文件夹
-	//if len(folders) != 0 {
+	// if len(folders) != 0 {
 	//	for _, folderNameOflist := range folders {
 	//		folderID := folderNameOflist.Get("folder_id").String()
 	//		fileSearchName, fileURL = getFileURLbyfolderID(ctx, fileName, folderID)
@@ -932,8 +932,8 @@ func getGroupFileList(ctx *zero.Ctx) (fileList []string) {
 	//			return
 	//		}
 	//	}
-	//}
-	//return
+	// }
+	// return
 }
 func getFileURLbyfolderID(ctx *zero.Ctx, fileName, folderid string) (fileSearchName, fileURL string) {
 	filesOfGroup := ctx.GetThisGroupFilesByFolder(folderid)

@@ -29,6 +29,7 @@ const (
 	TypePerMinute                      = 7
 	TypePerHour                        = 8
 	TypePerDay                         = 9
+	TypePerWeek                        = 10
 )
 
 var remindRules = map[int]*regexp.Regexp{
@@ -41,9 +42,10 @@ var remindRules = map[int]*regexp.Regexp{
 	TypePerMinute:                      regexp.MustCompile(`^每(\d+)分(?:钟)?$`),
 	TypePerHour:                        regexp.MustCompile(`^每(\d+)小时$`),
 	TypePerDay:                         regexp.MustCompile(`^每天(\d+)点(\d+)?(?:分)?$`),
+	TypePerWeek:                        regexp.MustCompile(`^每周([1234567])的(\d+)点(\d+)?(?:分)?$`),
 }
 
-//var remindRules = map[int]*regexp.Regexp{
+// var remindRules = map[int]*regexp.Regexp{
 //	TypeMinute:                         regexp.MustCompile(`^(\d+)分(?:钟)?后$`),
 //	TypeHour:                           regexp.MustCompile(`^(\d+)小时后$`),
 //	TypeTodaySpecifyTime:               regexp.MustCompile(`^(?:早上|晚上|中午|下午)(\d+)点(\d+)?(?:分)?$`),
@@ -53,7 +55,7 @@ var remindRules = map[int]*regexp.Regexp{
 //	TypePerMinute:                      regexp.MustCompile(`^每(\d+)分(?:钟)?$`),
 //	TypePerHour:                        regexp.MustCompile(`^每(\d+)小时$`),
 //	TypePerDay:                         regexp.MustCompile(`^每天(?:早上|晚上|中午|下午)(\d+)点(\d+)?(?:分)?$`),
-//}
+// }
 
 type RemindData struct {
 	RemindQQ   string
@@ -63,7 +65,7 @@ type RemindData struct {
 	IsRepeat   bool
 }
 
-//var remindRules = map[int]string{
+// var remindRules = map[int]string{
 //	TypeMinute:                         "^(\\d+)分(?:钟)?后$",
 //	TypeHour:                           "^(\\d+)小时后$",
 //	TypeTodaySpecifyTime:               "^(\\d+)点(\\d+)?(?:分)?$",
@@ -73,7 +75,7 @@ type RemindData struct {
 //	TypePerMinute:                      "^每(\\d+)分(?:钟)?$",
 //	TypePerHour:                        "^每(\\d+)小时$",
 //	TypePerDay:                         "^每天(\\d+)点(\\d+)?(?:分)?$",
-//}
+// }
 
 func CheckReminderEvents(ctx *zero.Ctx) {
 	stime := time.Now().Unix()
@@ -272,6 +274,27 @@ func remindResolve(remindMsg string) (RemindData, error) {
 	case TypePerDay:
 		hour, _ := strconv.Atoi(remindParams[0])
 		minute, _ := strconv.Atoi(remindParams[1])
+		if nextRemindTime.Hour() > hour || (nextRemindTime.Hour() == hour && nextRemindTime.Minute() >= minute) {
+			nextRemindTime = time.Date(nextRemindTime.Year(), nextRemindTime.Month(), nextRemindTime.Day()+1, hour, minute, 0, 0, nextRemindTime.Location())
+		} else {
+			nextRemindTime = time.Date(nextRemindTime.Year(), nextRemindTime.Month(), nextRemindTime.Day(), hour, minute, 0, 0, nextRemindTime.Location())
+		}
+		isRepeat = true
+	case TypePerWeek:
+		week, _ := strconv.Atoi(remindParams[0])
+		hour, _ := strconv.Atoi(remindParams[1])
+		minute, _ := strconv.Atoi(remindParams[2])
+		// 获取当前时间
+		now := time.Now()
+
+		// 计算今天是周几（0=Sunday，1=Monday，...，6=Saturday）
+		dayOfWeek := int(now.Weekday())
+
+		// 计算距离最近的下一个周二还有多少天
+		daysUntilNextTuesday := (week - dayOfWeek + 7) % 7
+
+		// 计算最近的周二的日期
+		nextRemindTime = now.AddDate(0, 0, daysUntilNextTuesday)
 		if nextRemindTime.Hour() > hour || (nextRemindTime.Hour() == hour && nextRemindTime.Minute() >= minute) {
 			nextRemindTime = time.Date(nextRemindTime.Year(), nextRemindTime.Month(), nextRemindTime.Day()+1, hour, minute, 0, 0, nextRemindTime.Location())
 		} else {
