@@ -307,13 +307,13 @@ func remindResolve(remindMsg string) (RemindData, error) {
 		// 计算今天是周几（0=Sunday，1=Monday，...，6=Saturday）
 		dayOfWeek := int(now.Weekday())
 
-		// 计算距离最近的下一个周二还有多少天
+		// 计算距离最近的下一个周几还有多少天
 		daysUntilNextTuesday := (week - dayOfWeek + 7) % 7
 
 		// 计算最近的周二的日期
 		nextRemindTime = now.AddDate(0, 0, daysUntilNextTuesday)
-		if nextRemindTime.Hour() > hour || (nextRemindTime.Hour() == hour && nextRemindTime.Minute() >= minute) {
-			nextRemindTime = time.Date(nextRemindTime.Year(), nextRemindTime.Month(), nextRemindTime.Day()+1, hour, minute, 0, 0, nextRemindTime.Location())
+		if nextRemindTime.Day() == now.Day() && (hour < now.Hour() || (hour == now.Hour() && minute <= now.Minute())) {
+			nextRemindTime = time.Date(nextRemindTime.Year(), nextRemindTime.Month(), nextRemindTime.Day()+7, hour, minute, 0, 0, nextRemindTime.Location())
 		} else {
 			nextRemindTime = time.Date(nextRemindTime.Year(), nextRemindTime.Month(), nextRemindTime.Day(), hour, minute, 0, 0, nextRemindTime.Location())
 		}
