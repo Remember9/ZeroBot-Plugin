@@ -577,7 +577,7 @@ func init() {
 		var segList []message.MessageSegment
 		idMap := map[int]uint{}
 		for i, task := range cronTasks {
-			m := message.ParseMessageFromString(task.Content + "\n下次提醒：" + task.NextRemindTime.Format("2006-01-02 15:04:05") + "\n")
+			m := message.ParseMessageFromString(task.Content + "\n频率：" + task.RemindRule + "\n下次提醒：" + task.NextRemindTime.Format("2006-01-02 15:04:05") + "\n")
 			mList = append(mList, m)
 			segList = append(segList, m...)
 			idMap[i+1] = task.ID // 记事列表id映射关系
