@@ -63,20 +63,28 @@ func init() {
 		panic(err)
 	}
 
-	stdout := windows.Handle(os.Stdout.Fd())
-	err = windows.GetConsoleMode(stdout, &mode)
-	if err != nil {
-		panic(err)
+	// 检查是否运行在控制台窗口模式下
+	isConsole := false
+	if fileInfo, _ := os.Stdout.Stat(); fileInfo.Mode()&os.ModeCharDevice != 0 {
+		isConsole = true
 	}
 
-	mode |= windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING // 启用虚拟终端处理
-	mode |= windows.ENABLE_PROCESSED_OUTPUT            // 启用处理后的输出
+	if isConsole {
+		stdout := windows.Handle(os.Stdout.Fd())
+		var mode uint32
+		err := windows.GetConsoleMode(stdout, &mode)
+		if err != nil {
+			panic(err)
+		}
 
-	err = windows.SetConsoleMode(stdout, mode)
-	// windows 带颜色 log 自定义格式
-	logrus.SetFormatter(&logFormat{hasColor: err == nil})
-	if err != nil {
-		logrus.Warnln("VT100设置失败, 将以无色模式输出")
+		mode |= windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING // 启用虚拟终端处理
+		mode |= windows.ENABLE_PROCESSED_OUTPUT            // 启用处理后的输出
+
+		err = windows.SetConsoleMode(stdout, mode)
+		if err != nil {
+			logrus.Warnln("VT100设置失败，将以无色模式输出")
+			// 继续执行，但不设置颜色
+		}
 	}
 
 	err = setConsoleTitle("ZeroBot-Blugin " + banner.Version + " " + banner.Copyright)

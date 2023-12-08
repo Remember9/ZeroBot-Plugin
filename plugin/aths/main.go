@@ -169,9 +169,9 @@ func init() {
 		}
 	}()
 
-	go func() {
-		StartServer()
-	}()
+	// go func() {
+	// 	StartServer()
+	// }()
 
 	// 添加新的定时提醒
 	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
