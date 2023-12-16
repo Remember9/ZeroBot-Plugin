@@ -402,72 +402,72 @@ func init() { // 插件主体
 				),
 			)
 		})
-	// 入群欢迎
-	engine.OnNotice().SetBlock(false).
-		Handle(func(ctx *zero.Ctx) {
-			if ctx.Event.NoticeType == "group_increase" && ctx.Event.SelfID != ctx.Event.UserID {
-				var w welcome
-				err := db.Find("welcome", &w, "where gid = "+strconv.FormatInt(ctx.Event.GroupID, 10))
-				if err == nil {
-					ctx.SendGroupMessage(ctx.Event.GroupID, message.ParseMessageFromString(welcometocq(ctx, w.Msg)))
-				} else {
-					ctx.SendChain(message.Text("欢迎~"))
-				}
-				c, ok := ctx.State["manager"].(*ctrl.Control[*zero.Ctx])
-				if ok {
-					enable := c.GetData(ctx.Event.GroupID)&1 == 1
-					if enable {
-						uid := ctx.Event.UserID
-						a := rand.Intn(100)
-						b := rand.Intn(100)
-						r := a + b
-						ctx.SendChain(message.At(uid), message.Text(fmt.Sprintf("考你一道题：%d+%d=?\n如果60秒之内答不上来，%s就要把你踢出去了哦~", a, b, zero.BotConfig.NickName[0])))
-						// 匹配发送者进行验证
-						rule := func(ctx *zero.Ctx) bool {
-							for _, elem := range ctx.Event.Message {
-								if elem.Type == "text" {
-									text := strings.ReplaceAll(elem.Data["text"], " ", "")
-									ans, err := strconv.Atoi(text)
-									if err == nil {
-										if ans != r {
-											ctx.SendChain(message.Text("答案不对哦，再想想吧~"))
-											return false
-										}
-										return true
-									}
-								}
-							}
-							return false
-						}
-						next := zero.NewFutureEvent("message", 999, false, ctx.CheckSession(), rule)
-						recv, cancel := next.Repeat()
-						select {
-						case <-time.After(time.Minute):
-							cancel()
-							ctx.SendChain(message.Text("拜拜啦~"))
-							ctx.SetGroupKick(ctx.Event.GroupID, uid, false)
-						case <-recv:
-							cancel()
-							ctx.SendChain(message.Text("答对啦~"))
-						}
-					}
-				}
-			}
-		})
-	// 退群提醒
-	engine.OnNotice().SetBlock(false).
-		Handle(func(ctx *zero.Ctx) {
-			if ctx.Event.NoticeType == "group_decrease" {
-				var w welcome
-				err := db.Find("farewell", &w, "where gid = "+strconv.FormatInt(ctx.Event.GroupID, 10))
-				if err == nil {
-					ctx.SendGroupMessage(ctx.Event.GroupID, message.ParseMessageFromString(welcometocq(ctx, w.Msg)))
-				} else {
-					userid := ctx.Event.UserID
-					ctx.SendChain(message.Text(ctx.CardOrNickName(userid), "(", userid, ")", "离开了我们..."))
-				}
-			}
-		})
+	// // 入群欢迎
+	// engine.OnNotice().SetBlock(false).
+	// 	Handle(func(ctx *zero.Ctx) {
+	// 		if ctx.Event.NoticeType == "group_increase" && ctx.Event.SelfID != ctx.Event.UserID {
+	// 			var w welcome
+	// 			err := db.Find("welcome", &w, "where gid = "+strconv.FormatInt(ctx.Event.GroupID, 10))
+	// 			if err == nil {
+	// 				ctx.SendGroupMessage(ctx.Event.GroupID, message.ParseMessageFromString(welcometocq(ctx, w.Msg)))
+	// 			} else {
+	// 				ctx.SendChain(message.Text("欢迎~"))
+	// 			}
+	// 			c, ok := ctx.State["manager"].(*ctrl.Control[*zero.Ctx])
+	// 			if ok {
+	// 				enable := c.GetData(ctx.Event.GroupID)&1 == 1
+	// 				if enable {
+	// 					uid := ctx.Event.UserID
+	// 					a := rand.Intn(100)
+	// 					b := rand.Intn(100)
+	// 					r := a + b
+	// 					ctx.SendChain(message.At(uid), message.Text(fmt.Sprintf("考你一道题：%d+%d=?\n如果60秒之内答不上来，%s就要把你踢出去了哦~", a, b, zero.BotConfig.NickName[0])))
+	// 					// 匹配发送者进行验证
+	// 					rule := func(ctx *zero.Ctx) bool {
+	// 						for _, elem := range ctx.Event.Message {
+	// 							if elem.Type == "text" {
+	// 								text := strings.ReplaceAll(elem.Data["text"], " ", "")
+	// 								ans, err := strconv.Atoi(text)
+	// 								if err == nil {
+	// 									if ans != r {
+	// 										ctx.SendChain(message.Text("答案不对哦，再想想吧~"))
+	// 										return false
+	// 									}
+	// 									return true
+	// 								}
+	// 							}
+	// 						}
+	// 						return false
+	// 					}
+	// 					next := zero.NewFutureEvent("message", 999, false, ctx.CheckSession(), rule)
+	// 					recv, cancel := next.Repeat()
+	// 					select {
+	// 					case <-time.After(time.Minute):
+	// 						cancel()
+	// 						ctx.SendChain(message.Text("拜拜啦~"))
+	// 						ctx.SetGroupKick(ctx.Event.GroupID, uid, false)
+	// 					case <-recv:
+	// 						cancel()
+	// 						ctx.SendChain(message.Text("答对啦~"))
+	// 					}
+	// 				}
+	// 			}
+	// 		}
+	// 	})
+	// // 退群提醒
+	// engine.OnNotice().SetBlock(false).
+	// 	Handle(func(ctx *zero.Ctx) {
+	// 		if ctx.Event.NoticeType == "group_decrease" {
+	// 			var w welcome
+	// 			err := db.Find("farewell", &w, "where gid = "+strconv.FormatInt(ctx.Event.GroupID, 10))
+	// 			if err == nil {
+	// 				ctx.SendGroupMessage(ctx.Event.GroupID, message.ParseMessageFromString(welcometocq(ctx, w.Msg)))
+	// 			} else {
+	// 				userid := ctx.Event.UserID
+	// 				ctx.SendChain(message.Text(ctx.CardOrNickName(userid), "(", userid, ")", "离开了我们..."))
+	// 			}
+	// 		}
+	// 	})
 	// 设置欢迎语
 	engine.OnRegex(`^设置欢迎语([\s\S]*)$`, zero.OnlyGroup, zero.AdminPermission).SetBlock(true).
 		Handle(func(ctx *zero.Ctx) {

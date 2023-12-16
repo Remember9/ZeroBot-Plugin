@@ -186,7 +186,7 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 		if result.Error != nil {
 			logrus.Errorf("更新提醒任务失败, error=%v", result.Error.Error())
 		} else {
-			logrus.WithFields(logrus.Fields{"影响行数": int(result.RowsAffected), "更新结果": result}).Info("更新提醒任务成功")
+			logrus.WithFields(logrus.Fields{"影响行数": int(result.RowsAffected)}).Info("更新提醒任务成功")
 		}
 
 		update = append(update, updateItem)
@@ -201,13 +201,9 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 		}
 	}
 	logStr += fmt.Sprintf("待办个数: %s, ids=%v", strconv.Itoa(len(update)), ids)
-	// 根据remind_rule更新next_remind_time
-	logrus.Infof("@@@@@@@@@@@@@@@@@@@@@update=%v", update)
-	logrus.Infof("@@@@@@@@@@@@@@@@@@@@@len update=%v", len(update))
 
 	etime := time.Now().Unix()
 	logStr += "耗时：" + strconv.FormatInt(etime-stime, 10) + "秒"
-	logrus.Info(logStr)
 }
 
 func remindResolve(remindMsg string) (RemindData, error) {

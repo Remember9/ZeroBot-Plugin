@@ -158,13 +158,17 @@ func init() {
 		ticker := time.NewTicker(20 * time.Second)
 		time.Sleep(5 * time.Second)
 		var ctx *zero.Ctx
-		// 获取一个在线能用的bot
-		zero.RangeBot(func(id int64, c *zero.Ctx) bool {
-			ctx = c
-			return false
-		})
 		// 查询待提醒事件
 		for range ticker.C {
+			// 获取一个在线能用的bot
+			zero.RangeBot(func(id int64, c *zero.Ctx) bool {
+				ctx = c
+				return false
+			})
+			if ctx == nil {
+				logrus.Errorln("定时器zero.Ctx==nil, 未获取到机器人实例，无法发送消息")
+				continue
+			}
 			CheckReminderEvents(ctx)
 		}
 	}()
@@ -731,7 +735,7 @@ func init() {
 				logrus.Infoln("未确认，删除操作取消")
 				return
 			case <-next:
-				updateResult := db.Debug().Model(&whichModel).Where("id in (?)", ids).Updates(updates)
+				updateResult := db.Model(&whichModel).Where("id in (?)", ids).Updates(updates)
 				if updateResult.Error != nil {
 					errMsg = fmt.Sprintf("删除失败：%v", updateResult.Error)
 					logrus.Errorf(errMsg)

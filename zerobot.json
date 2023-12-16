@@ -1,0 +1,12 @@
+{
+  "zero": {
+    "nickname": ["涛涛", "艾涛浩斯"],
+    "command_prefix": "/",
+    "super_users": [164212720,647813047,1224110407],
+    "ring_len": 4096,
+    "latency": 233000000,
+    "max_process_time": 240000000000,
+    "mark_message": true
+  },
+  "ws": [{ "Url": "ws://127.0.0.1:6700", "AccessToken": "" }]
+}
