@@ -162,8 +162,11 @@ func init() {
 		for range ticker.C {
 			// 获取一个在线能用的bot
 			zero.RangeBot(func(id int64, c *zero.Ctx) bool {
-				ctx = c
-				return false
+				if c != nil {
+					ctx = c
+					return false
+				}
+				return true
 			})
 			if ctx == nil {
 				logrus.Errorln("定时器zero.Ctx==nil, 未获取到机器人实例，无法发送消息")

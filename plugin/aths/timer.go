@@ -89,8 +89,7 @@ type RemindData struct {
 // }
 
 func CheckReminderEvents(ctx *zero.Ctx) {
-	stime := time.Now().Unix()
-	logStr := "[" + time.Unix(stime, 0).Format("2006-01-02 15:04:05") + "]"
+	stime := time.Now()
 
 	remindDB := GetDB()
 	if remindDB == nil {
@@ -106,8 +105,9 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 		return
 	}
 	logrus.Infof("全部待提醒内容=%v\n", reminds)
-	update := make([]map[string]interface{}, 0)
+	successList := make([]map[string]interface{}, 0)
 	for _, row := range reminds {
+		var ret int64 = 0
 		qqNumber, _ := strconv.Atoi(row["qq_number"].(string))
 		groupNumber, _ := strconv.Atoi(row["group_number"].(string))
 		// 如果是话题提醒
@@ -138,7 +138,8 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 				endMsg = append(endMsg, message.Text(i+1, ". ")) // 给每条笔记添加序号
 				endMsg = append(endMsg, msg...)
 			}
-			ctx.SendPrivateMessage(int64(qqNumber), endMsg)
+			ret = ctx.SendPrivateMessage(int64(qqNumber), endMsg)
+			logrus.Infof("发送消息返回值：%v\n", ret)
 		} else if row["type"].(int8) == TaskTypeTodo {
 			sendContent := ""
 			if row["content"] != nil && row["content"].(string) != "" {
@@ -149,14 +150,17 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 			// 私发提醒
 			logrus.Info("remind groupNumber=", groupNumber)
 			logrus.Info(", qqNumber", qqNumber)
-			ctx.SendPrivateMessage(int64(qqNumber), message.Text(sendContent))
+			ret = ctx.SendPrivateMessage(int64(qqNumber), message.Text(sendContent))
+			logrus.Infof("发送消息返回值：%v\n", ret)
 			// 如果是在群里建立的定时提醒，还会在群里at并提醒
 			if row["group_number"] != nil && row["group_number"].(string) != "0" {
 				msg := message.Message{message.At(int64(qqNumber)), message.Text(sendContent)}
-				ctx.SendGroupMessage(int64(groupNumber), msg)
+				ret = ctx.SendGroupMessage(int64(groupNumber), msg)
+				logrus.Infof("发送消息返回值：%v\n", ret)
 			}
 		} else {
-			ctx.SendPrivateMessage(int64(qqNumber), message.Text("未知提醒类型: "+row["type"].(string)))
+			ret = ctx.SendPrivateMessage(int64(qqNumber), message.Text("未知提醒类型: "+row["type"].(string)))
+			logrus.Infof("发送消息返回值：%v\n", ret)
 		}
 		// 发送结束后更新下次提醒时间
 		status := TaskStatusOff
@@ -174,11 +178,18 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 			nextRemind, err := remindResolve(row["remind_rule"].(string))
 			if err != nil {
 				errMsg := fmt.Sprintf("提醒规则: %s, 错误信息%s", row["remind_rule"].(string), err.Error())
-				ctx.SendChain(message.Text(errMsg))
+				ret := ctx.SendChain(message.Text(errMsg))
+				logrus.Infof("发送消息返回值：%v\n", ret)
 				logrus.WithFields(logrus.Fields{"提醒规则": row["remind_rule"].(string), "错误信息": errMsg}).Error("更新下次提醒时间失败")
 				return
 			}
 			updateItem["next_remind_time"] = nextRemind.Time
+		}
+
+		// 返回值为0证明消息发送失败
+		if ret == 0 {
+			logrus.Errorf("发送提醒失败, ret=%v\n", ret)
+			continue
 		}
 
 		// 成功发送提醒后，更新提醒任务
@@ -189,21 +200,19 @@ func CheckReminderEvents(ctx *zero.Ctx) {
 			logrus.WithFields(logrus.Fields{"影响行数": int(result.RowsAffected)}).Info("更新提醒任务成功")
 		}
 
-		update = append(update, updateItem)
+		successList = append(successList, updateItem)
 	}
 
 	// 获取待办的全部id
-	ids := make([]uint, len(update))
-	for i, m := range update {
+	ids := make([]uint, len(successList))
+	for i, m := range successList {
 		fmt.Printf("获取待办的全部id m=%v", m)
 		if id, ok := m["id"].(uint); ok {
 			ids[i] = id
 		}
 	}
-	logStr += fmt.Sprintf("待办个数: %s, ids=%v", strconv.Itoa(len(update)), ids)
 
-	etime := time.Now().Unix()
-	logStr += "耗时：" + strconv.FormatInt(etime-stime, 10) + "秒"
+	logrus.Infof("提醒检查结束，完成结果%v/%v，耗时：%v\n", len(successList), len(reminds), time.Now().Sub(stime))
 }
 
 func remindResolve(remindMsg string) (RemindData, error) {
