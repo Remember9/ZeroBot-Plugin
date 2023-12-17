@@ -35,14 +35,14 @@ const (
 var remindRules = map[int]*regexp.Regexp{
 	TypeMinute:                         regexp.MustCompile(`^(\d+)分(?:钟)?后$`),
 	TypeHour:                           regexp.MustCompile(`^(\d+)小时后$`),
-	TypeTodaySpecifyTime:               regexp.MustCompile(`^(\d+)点(\d+)?(?:分)?$`),
-	TypeTomorrowSpecifyTime:            regexp.MustCompile(`^明天(\d+)点(\d+)?(?:分)?$`),
-	TypeTheDayAfterTomorrowSpecifyTime: regexp.MustCompile(`^后天(\d+)点(\d+)?(?:分)?$`),
+	TypeTodaySpecifyTime:               regexp.MustCompile(`^(\d+)(上午|中午|晚上)?点(\d+)?(?:分)?$`),
+	TypeTomorrowSpecifyTime:            regexp.MustCompile(`^明天(上午|中午|晚上)?(\d+)点(\d+)?(?:分)?$`),
+	TypeTheDayAfterTomorrowSpecifyTime: regexp.MustCompile(`^后天(上午|中午|晚上)?(\d+)点(\d+)?(?:分)?$`),
 	TypeYmdhms:                         regexp.MustCompile(`^(\d+)月(\d+)(?:日|号)(\d+)点(\d+)?(?:分)?$`),
 	TypePerMinute:                      regexp.MustCompile(`^每(\d+)分(?:钟)?$`),
 	TypePerHour:                        regexp.MustCompile(`^每(\d+)小时$`),
 	TypePerDay:                         regexp.MustCompile(`^每天(\d+)点(\d+)?(?:分)?$`),
-	TypePerWeek:                        regexp.MustCompile(`^每周([1234567一二三四五六七日])的(\d+)点(\d+)?(?:分)?$`),
+	TypePerWeek:                        regexp.MustCompile(`^每周([1234567一二三四五六七日])(上午|中午|晚上)?的?(\d+)点(\d+)?(?:分)?$`),
 }
 
 var weekCnMapping = map[string]int{
