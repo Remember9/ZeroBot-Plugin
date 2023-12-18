@@ -115,6 +115,11 @@ func buildTopicMap() {
 	topicNameMap := make(map[string]int)
 	topicMap = make(map[int64]topicmap)
 	db := GetDB()
+	for db == nil {
+		logrus.Error("获取数据库连接失败，db==nil，尝试重新获取····")
+		time.Sleep(2 * time.Second)
+		db = GetDB()
+	}
 	var reminds []model.Remind
 	db.Model(&model.Remind{}).Select("DISTINCT topic_id, topic_name, qq_number").Find(&reminds)
 	for _, remind := range reminds {

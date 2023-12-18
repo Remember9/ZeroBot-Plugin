@@ -22,7 +22,6 @@ func init() {
 	// 连接MySQL数据库
 	// dsn := "root:123456@tcp(127.0.0.1:3306)/robot?charset=utf8mb4&parseTime=True&loc=Local"
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local", _config.MySQL.User, _config.MySQL.Password, _config.MySQL.Host, _config.MySQL.Port, _config.MySQL.DbName)
-
 	// 声明err变量，下面不能使用:=赋值运算符，否则_db变量会当成局部变量，导致外部无法访问_db变量
 	// 连接MYSQL, 获得DB类型实例，用于后面的数据库读写操作。
 	_db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
@@ -30,7 +29,10 @@ func init() {
 		panic("连接数据库失败, error=" + err.Error())
 	}
 
-	sqlDB, _ := _db.DB()
+	sqlDB, err1 := _db.DB()
+	if err1 != nil {
+		panic("_db.DB()失败, error=" + err1.Error())
+	}
 
 	// 设置数据库连接池参数
 	sqlDB.SetMaxOpenConns(100) // 设置数据库连接池最大连接数
