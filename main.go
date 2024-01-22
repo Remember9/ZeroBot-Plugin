@@ -155,8 +155,8 @@ var config zbpcfg
 
 func init() {
 	// 加载上海时区
-	shanghai, _ := time.LoadLocation("Asia/Shanghai")
-	time.Local = shanghai
+	// shanghai, _ := time.LoadLocation("Asia/Shanghai")
+	// time.Local = shanghai
 	logrus.Infof("当前系统时间：%v\n", time.Now())
 
 	sus := make([]int64, 0, 16)

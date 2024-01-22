@@ -35,14 +35,14 @@ const (
 var remindRules = map[int]*regexp.Regexp{
 	TypeMinute:                         regexp.MustCompile(`^(\d+)分(?:钟)?后$`),
 	TypeHour:                           regexp.MustCompile(`^(\d+)小时后$`),
-	TypeTodaySpecifyTime:               regexp.MustCompile(`^(\d+)(上午|中午|晚上)?点(\d+)?(?:分)?$`),
-	TypeTomorrowSpecifyTime:            regexp.MustCompile(`^明天(上午|中午|晚上)?(\d+)点(\d+)?(?:分)?$`),
-	TypeTheDayAfterTomorrowSpecifyTime: regexp.MustCompile(`^后天(上午|中午|晚上)?(\d+)点(\d+)?(?:分)?$`),
+	TypeTodaySpecifyTime:               regexp.MustCompile(`^(\d+)(?:上午|中午|晚上)?点(\d+)?(?:分)?$`),
+	TypeTomorrowSpecifyTime:            regexp.MustCompile(`^明天(?:上午|中午|晚上)?(\d+)点(\d+)?(?:分)?$`),
+	TypeTheDayAfterTomorrowSpecifyTime: regexp.MustCompile(`^后天(?:上午|中午|晚上)?(\d+)点(\d+)?(?:分)?$`),
 	TypeYmdhms:                         regexp.MustCompile(`^(\d+)月(\d+)(?:日|号)(\d+)点(\d+)?(?:分)?$`),
 	TypePerMinute:                      regexp.MustCompile(`^每(\d+)分(?:钟)?$`),
 	TypePerHour:                        regexp.MustCompile(`^每(\d+)小时$`),
 	TypePerDay:                         regexp.MustCompile(`^每天(\d+)点(\d+)?(?:分)?$`),
-	TypePerWeek:                        regexp.MustCompile(`^每周([1234567一二三四五六七日])(上午|中午|晚上)?的?(\d+)点(\d+)?(?:分)?$`),
+	TypePerWeek:                        regexp.MustCompile(`^每周([1234567一二三四五六七日])(?:上午|中午|晚上)?的?(\d+)点(\d+)?(?:分)?$`),
 }
 
 var weekCnMapping = map[string]int{
@@ -262,6 +262,7 @@ func remindResolve(remindMsg string) (RemindData, error) {
 
 	nextRemindTime := time.Now()
 	isRepeat := false
+	fmt.Printf("matchType=%+v\n", matchType)
 	switch matchType {
 	case TypeMinute, TypePerMinute:
 		minute, _ := strconv.Atoi(remindParams[0])
@@ -273,6 +274,13 @@ func remindResolve(remindMsg string) (RemindData, error) {
 		hour, _ := strconv.Atoi(remindParams[0])
 		minute, _ := strconv.Atoi(remindParams[1])
 		nextRemindTime = time.Date(nextRemindTime.Year(), nextRemindTime.Month(), nextRemindTime.Day(), hour, minute, 0, 0, nextRemindTime.Location())
+		fmt.Printf("remindParams=%+v\n", remindParams)
+		fmt.Printf("remindParams[0]=%+v\n", remindParams[0])
+		fmt.Printf("remindParams[1]=%+v\n", remindParams[1])
+		fmt.Printf("hour=%+v\n", hour)
+		fmt.Printf("minute=%+v\n", minute)
+		fmt.Printf("nextRemindTime=%+v\n", nextRemindTime)
+
 	case TypeTomorrowSpecifyTime:
 		hour, _ := strconv.Atoi(remindParams[0])
 		minute, _ := strconv.Atoi(remindParams[1])

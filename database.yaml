@@ -1,5 +1,11 @@
+# mysql:
+#   host: localhost
+#   port: 3306
+#   user: aths
+#   password: jbjyaths296495
+#   dbname: robot
 mysql:
-  host: 47.97.249.149
+  host: 120.53.106.11
   port: 3306
   user: aths
   password: jbjyaths296495
