@@ -23,9 +23,6 @@ import (
 	"unicode"
 )
 
-const imageRootPath = "/var/bot/"
-const hso = "https://gchat.qpic.cn/gchatpic_new//--4234EDEC5F147A4C319A41149D7E0EA9/0"
-
 const (
 	funcTypeNote = iota + 1
 	funcTypeJishi
@@ -181,9 +178,9 @@ func init() {
 		}
 	}()
 
-	// go func() {
-	// 	StartServer()
-	// }()
+	go func() {
+		StartServer()
+	}()
 
 	// 添加新的定时提醒
 	engine.OnMessage().SetBlock(false).Handle(func(ctx *zero.Ctx) {
